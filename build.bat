@@ -27,19 +27,17 @@ for /f "usebackq tokens=1,2 delims==" %%a in (.env) do (
 )
 
 REM Verify required variables
-if "%CUSTOM_APP_REPO%"=="" (
-    echo [ERROR] CUSTOM_APP_REPO variable is not defined in .env
-    exit /b 1
+if "%CUSTOM_APPS%"=="" (
+    echo [WARNING] CUSTOM_APPS variable is not defined in .env
+    echo No custom apps will be installed. Only Frappe will be available.
 )
 
 REM Default values
-if "%CUSTOM_APP_BRANCH%"=="" set CUSTOM_APP_BRANCH=develop
 if "%FRAPPE_BRANCH%"=="" set FRAPPE_BRANCH=version-14
 if "%PYTHON_VERSION%"=="" set PYTHON_VERSION=3.11.6
 
 echo Configuration:
-echo   CUSTOM_APP_REPO: %CUSTOM_APP_REPO%
-echo   CUSTOM_APP_BRANCH: %CUSTOM_APP_BRANCH%
+echo   CUSTOM_APPS: %CUSTOM_APPS%
 echo   FRAPPE_BRANCH: %FRAPPE_BRANCH%
 echo   PYTHON_VERSION: %PYTHON_VERSION%
 if not "%GITHUB_TOKEN%"=="" (
@@ -55,8 +53,7 @@ echo.
 
 docker build ^
     --build-arg GITHUB_TOKEN=%GITHUB_TOKEN% ^
-    --build-arg CUSTOM_APP_REPO=%CUSTOM_APP_REPO% ^
-    --build-arg CUSTOM_APP_BRANCH=%CUSTOM_APP_BRANCH% ^
+    --build-arg CUSTOM_APPS=%CUSTOM_APPS% ^
     --build-arg FRAPPE_BRANCH=%FRAPPE_BRANCH% ^
     --build-arg PYTHON_VERSION=%PYTHON_VERSION% ^
     -t frappe-custom:latest ^
