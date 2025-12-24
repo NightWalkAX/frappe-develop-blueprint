@@ -167,15 +167,31 @@ RUN cd /home/frappe/frappe-bench && \
     if [ -n "${CUSTOM_APPS}" ]; then \
       echo "${CUSTOM_APPS}" | tr ',' '\n' | while IFS=':' read -r repo branch; do \
         if [ -n "$repo" ]; then \
-          app_name=$(basename "$repo" .git) && \
-          echo "=== Installing app: $app_name from $repo (branch: ${branch:-develop}) ===" && \
+          echo "=== Installing app from $repo (branch: ${branch:-develop}) ===" && \
+          # List apps before cloning
+          apps_before=$(ls -1 apps/ 2>/dev/null || echo "") && \
+          # Clone with retries
+          clone_success=false && \
           for i in 1 2 3 4 5; do \
             echo "--- Attempt $i of cloning $repo ---" && \
-            bench get-app --branch="${branch:-develop}" "https://github.com/$repo" && break || \
-            (echo "Failed attempt $i, waiting 5s..." && sleep 5); \
+            if bench get-app --branch="${branch:-develop}" "https://github.com/$repo"; then \
+              clone_success=true && \
+              break; \
+            else \
+              echo "Failed attempt $i, waiting 5s..." && sleep 5; \
+            fi; \
           done && \
-          if [ ! -d "apps/$app_name" ]; then \
-            echo "ERROR: Could not clone app $app_name from $repo" && exit 1; \
+          # Detect the actual app name by comparing directory listings
+          if [ "$clone_success" = "true" ]; then \
+            apps_after=$(ls -1 apps/ 2>/dev/null || echo "") && \
+            app_name=$(comm -13 <(echo "$apps_before" | sort) <(echo "$apps_after" | sort) | head -n 1) && \
+            if [ -n "$app_name" ] && [ -d "apps/$app_name" ]; then \
+              echo "✓ Successfully installed app: $app_name"; \
+            else \
+              echo "ERROR: Could not detect installed app from $repo" && exit 1; \
+            fi; \
+          else \
+            echo "ERROR: Could not clone app from $repo after 5 attempts" && exit 1; \
           fi; \
         fi; \
       done; \
