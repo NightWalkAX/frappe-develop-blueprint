@@ -169,7 +169,7 @@ RUN cd /home/frappe/frappe-bench && \
         if [ -n "$repo" ]; then \
           echo "=== Installing app from $repo (branch: ${branch:-develop}) ===" && \
           # List apps before cloning
-          apps_before=$(ls -1 apps/ 2>/dev/null || echo "") && \
+          ls -1 apps/ 2>/dev/null | sort > /tmp/apps_before.txt || touch /tmp/apps_before.txt && \
           # Clone with retries
           clone_success=false && \
           for i in 1 2 3 4 5; do \
@@ -183,14 +183,16 @@ RUN cd /home/frappe/frappe-bench && \
           done && \
           # Detect the actual app name by comparing directory listings
           if [ "$clone_success" = "true" ]; then \
-            apps_after=$(ls -1 apps/ 2>/dev/null || echo "") && \
-            app_name=$(comm -13 <(echo "$apps_before" | sort) <(echo "$apps_after" | sort) | head -n 1) && \
+            ls -1 apps/ 2>/dev/null | sort > /tmp/apps_after.txt && \
+            app_name=$(comm -13 /tmp/apps_before.txt /tmp/apps_after.txt | head -n 1) && \
+            rm -f /tmp/apps_before.txt /tmp/apps_after.txt && \
             if [ -n "$app_name" ] && [ -d "apps/$app_name" ]; then \
               echo "✓ Successfully installed app: $app_name"; \
             else \
               echo "ERROR: Could not detect installed app from $repo" && exit 1; \
             fi; \
           else \
+            rm -f /tmp/apps_before.txt /tmp/apps_after.txt && \
             echo "ERROR: Could not clone app from $repo after 5 attempts" && exit 1; \
           fi; \
         fi; \
