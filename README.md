@@ -45,10 +45,10 @@ cp .env.example .env
 Edit `.env` file with your settings:
 
 ```bash
-# Custom App Configuration
-CUSTOM_APP_REPO=YourUsername/your_app
-CUSTOM_APP_BRANCH=develop
-CUSTOM_APP_NAME=your_app_name
+# Custom Apps Configuration (comma-separated list)
+# Format: repo1:branch1,repo2:branch2,repo3:branch3
+# If branch is omitted, 'develop' will be used by default
+CUSTOM_APPS=YourUsername/your_app:develop,YourUsername/another_app:main
 
 # Site Configuration (auto-setup)
 SITE_NAME=dpe.erp.local
@@ -62,8 +62,19 @@ CUSTOM_IMAGE=mytime-erp
 CUSTOM_TAG=latest
 
 # For private repositories
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxx
+GITHUB_TOKEN=github_pat_xxxxxxxxxxxxx
 ```
+
+**Examples:**
+- Single app: `CUSTOM_APPS=myorg/myapp:main`
+- Multiple apps: `CUSTOM_APPS=myorg/app1:develop,myorg/app2:main,myorg/app3:version-14`
+- Using default branch: `CUSTOM_APPS=myorg/app1,myorg/app2:main` (app1 will use 'develop')
+
+**Important Notes:**
+- 📋 **Order matters**: Apps are installed in the order listed
+- 🔗 **Dependencies**: If app B depends on app A, list app A first
+- 🌿 **Default branch**: If no branch is specified, `develop` is used
+- 🔑 **Private repos**: Set `GITHUB_TOKEN` for private repositories
 
 ### 3. Build & Deploy
 
@@ -90,9 +101,24 @@ docker compose up -d
 
 Los servicios se iniciarán automáticamente y el sitio será creado con la configuración especificada en el archivo `.env`. El proceso incluye:
 - ✅ Creación automática del sitio
-### 6. (Opcional) Comandos Manuales
+- ✅ Instalación automática de todas las apps especificadas en `CUSTOM_APPS`
+- ✅ Activación del modo desarrollador
+- ✅ Configuración lista para usar
 
-Si necesitas crear sitios adicionales o realizar configuraciones manuales:
+### 5. Verify Installation
+
+Check the logs to ensure apps were installed successfully:
+```bash
+docker compose logs backend | grep "Installing app"
+```
+
+You should see messages like:
+- `📱 Installing app: <app_name>` - App installation started
+- `✅ App <app_name> installed successfully` - App installed
+
+### 6. (Optional) Manual Commands
+
+If you need to create additional sites or perform manual configurations:
 
 ```bash
 # Access the backend container
@@ -106,26 +132,13 @@ bench --site another.site.local install-app your_app_name
 
 # Exit container
 exit
-```t-password your_secure_password
-
-# Install your custom app
-bench --site dpe.erp.local install-app your_app_name
-
-# Enable developer mode
-bench --site dpe.erp.local set-config developer_mode 1
-
-# Set site in current site
-python -m restart.py
-
-# Exit container
-exit
 ```
 
-### 6. Access Your ERP
+### 7. Access Your ERP
 
 - **Frontend**: http://localhost:8080
 - **User**: Administrator
-- **Password**: admin (or what you set during site creation)
+- **Password**: admin (or what you set in `ADMIN_PASSWORD`)
 
 ## 🛠️ Management Scripts
 
@@ -221,10 +234,28 @@ The environment includes:
 
 ## 📚 Additional Documentation
 
-- [Docker Setup Guide](environment/DOCKER.md)
-- [Image Documentation](environment/images/develop/README.md)
+- [Custom Apps Installation Guide](docs/APPS_INSTALLATION.md) - Detailed guide for installing multiple apps
+- [Docker Setup Guide](DOCKER.md)
+- [Environment Variables Reference](.env.example)
 
 ## 🐛 Troubleshooting
+
+### Apps not installed
+
+**Check build logs:**
+```bash
+docker compose build backend 2>&1 | grep "Installing app"
+```
+
+**View installation logs:**
+```bash
+docker compose logs backend | grep -E "Installing app|installed successfully|not found"
+```
+
+**Common issues:**
+- ⚠️ `App <app_name> not found in apps/` - Build issue, rebuild with correct `CUSTOM_APPS`
+- ⚠️ Invalid repository format - Ensure format is `owner/repo:branch`
+- ⚠️ Private repo access denied - Verify `GITHUB_TOKEN` has correct permissions
 
 ### Services won't start
 ```bash
