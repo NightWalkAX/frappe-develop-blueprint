@@ -80,17 +80,6 @@ bench --site "${SITE_NAME}" migrate || echo "⚠️  Migrations completed with w
 echo "🧹 Clearing cache..."
 bench --site "${SITE_NAME}" clear-cache
 
-# Extract bench.zip if it exists in any custom app
-for app_dir in apps/*; do
-    if [ -d "$app_dir" ] && [ -f "$app_dir/bench.zip" ]; then
-        app_name=$(basename "$app_dir")
-        echo "📦 Found bench.zip in $app_name, extracting to bench root..."
-        unzip -o "$app_dir/bench.zip" -d /home/frappe/frappe-bench/
-        echo "✅ Contents extracted successfully from $app_name"
-        break
-    fi
-done
-
 echo "🎉 Site ready: ${SITE_NAME}"
 echo "👤 User: Administrator"
 echo "🔑 Password: ${ADMIN_PASSWORD}"

@@ -42,7 +42,6 @@ build/
 dist/
 *.tar
 *.tar.gz
-*.zip
 
 # Logs
 logs/
