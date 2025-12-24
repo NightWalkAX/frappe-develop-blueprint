@@ -3,33 +3,32 @@ set -e
 
 cd /home/frappe/frappe-bench
 
-# Variables de entorno con valores por defecto
+# Environment variables with default values
 SITE_NAME="${SITE_NAME:-dpe.erp.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-admin}"
-CUSTOM_APP_NAME="${CUSTOM_APP_NAME:-travel_agency_erp}"
 
-echo "🚀 Iniciando configuración del sitio..."
+echo "🚀 Starting site configuration..."
 
-# Esperar a que la base de datos esté lista
-echo "⏳ Esperando a que MariaDB esté disponible..."
+# Wait for database to be ready
+echo "⏳ Waiting for MariaDB to be available..."
 until mysql -h"${DB_HOST}" -uroot -p"${DB_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
-    echo "MariaDB no está listo - esperando..."
+    echo "MariaDB is not ready - waiting..."
     sleep 2
 done
-echo "✅ MariaDB está listo"
+echo "✅ MariaDB is ready"
 
-# Esperar a que Redis esté listo
-echo "⏳ Esperando a que Redis esté disponible..."
+# Wait for Redis to be ready
+echo "⏳ Waiting for Redis to be available..."
 until redis-cli -h "${REDIS_CACHE}" ping >/dev/null 2>&1; do
-    echo "Redis no está listo - esperando..."
+    echo "Redis is not ready - waiting..."
     sleep 2
 done
-echo "✅ Redis está listo"
+echo "✅ Redis is ready"
 
-# Verificar si el sitio ya existe
+# Check if site already exists
 if [ ! -d "sites/${SITE_NAME}" ]; then
-    echo "📦 Creando nuevo sitio: ${SITE_NAME}"
+    echo "📦 Creating new site: ${SITE_NAME}"
     bench new-site "${SITE_NAME}" \
         --admin-password "${ADMIN_PASSWORD}" \
         --db-root-password "${DB_ROOT_PASSWORD}" \
@@ -38,53 +37,65 @@ if [ ! -d "sites/${SITE_NAME}" ]; then
         --no-mariadb-socket \
         --force
     
-    echo "✅ Sitio creado exitosamente"
+    echo "✅ Site created successfully"
     
-    # Instalar la app personalizada
-    if [ -d "apps/${CUSTOM_APP_NAME}" ]; then
-        echo "📱 Instalando app: ${CUSTOM_APP_NAME}"
-        bench --site "${SITE_NAME}" install-app "${CUSTOM_APP_NAME}"
-        echo "✅ App instalada exitosamente"
+    # Install custom apps from list
+    if [ -f "/home/frappe/frappe-bench/.custom_apps_list" ]; then
+        apps_list=$(cat /home/frappe/frappe-bench/.custom_apps_list)
+        echo "📱 Installing custom apps from build list..."
+        echo "$apps_list" | tr ',' '\n' | while IFS=':' read -r repo branch; do
+            if [ -n "$repo" ]; then
+                app_name=$(basename "$repo" .git)
+                if [ -d "apps/$app_name" ]; then
+                    echo "📱 Installing app: $app_name"
+                    bench --site "${SITE_NAME}" install-app "$app_name"
+                    echo "✅ App $app_name installed successfully"
+                else
+                    echo "⚠️  App $app_name not found in apps/"
+                fi
+            fi
+        done
     else
-        echo "⚠️  App ${CUSTOM_APP_NAME} no encontrada en apps/"
+        echo "ℹ️  No custom apps list found, skipping app installation"
     fi
     
-    # Habilitar modo desarrollador
-    echo "🔧 Habilitando modo desarrollador"
+    # Enable developer mode
+    echo "🔧 Enabling developer mode"
     bench --site "${SITE_NAME}" set-config developer_mode 1
     
-    # Configurar el sitio como currentsite
+    # Set site as currentsite
     echo "${SITE_NAME}" > sites/currentsite.txt
     
-    echo "✅ Configuración completada"
+    echo "✅ Configuration completed"
 else
-    echo "ℹ️  El sitio ${SITE_NAME} ya existe, omitiendo creación"
+    echo "ℹ️  Site ${SITE_NAME} already exists, skipping creation"
     echo "${SITE_NAME}" > sites/currentsite.txt
 fi
 
-# Ejecutar migraciones si es necesario
-echo "🔄 Ejecutando migraciones..."
-bench --site "${SITE_NAME}" migrate || echo "⚠️  Migraciones completadas con advertencias"
+# Run migrations if needed
+echo "🔄 Running migrations..."
+bench --site "${SITE_NAME}" migrate || echo "⚠️  Migrations completed with warnings"
 
-# Limpiar cache
-echo "🧹 Limpiando cache..."
+# Clear cache
+echo "🧹 Clearing cache..."
 bench --site "${SITE_NAME}" clear-cache
 
-# Extraer bench.zip si existe en la app personalizada
-BENCH_ZIP_PATH="apps/${CUSTOM_APP_NAME}/bench.zip"
-if [ -f "${BENCH_ZIP_PATH}" ]; then
-    echo "📦 Encontrado bench.zip, extrayendo a la raíz del bench..."
-    unzip -o "${BENCH_ZIP_PATH}" -d /home/frappe/frappe-bench/
-    echo "✅ Contenidos extraídos exitosamente"
-else
-    echo "ℹ️  bench.zip no encontrado en ${BENCH_ZIP_PATH}, omitiendo extracción"
-fi
+# Extract bench.zip if it exists in any custom app
+for app_dir in apps/*; do
+    if [ -d "$app_dir" ] && [ -f "$app_dir/bench.zip" ]; then
+        app_name=$(basename "$app_dir")
+        echo "📦 Found bench.zip in $app_name, extracting to bench root..."
+        unzip -o "$app_dir/bench.zip" -d /home/frappe/frappe-bench/
+        echo "✅ Contents extracted successfully from $app_name"
+        break
+    fi
+done
 
-echo "🎉 Sitio listo: ${SITE_NAME}"
-echo "👤 Usuario: Administrator"
+echo "🎉 Site ready: ${SITE_NAME}"
+echo "👤 User: Administrator"
 echo "🔑 Password: ${ADMIN_PASSWORD}"
 
-# Iniciar el servidor usando restart.py
-echo "🚀 Iniciando servidor con restart.py..."
+# Start server using restart.py
+echo "🚀 Starting server with restart.py..."
 cd /home/frappe/frappe-bench
 exec /home/frappe/frappe-bench/env/bin/python restart.py

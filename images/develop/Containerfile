@@ -116,10 +116,9 @@ USER frappe
 ARG FRAPPE_BRANCH=version-14
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 ARG GITHUB_TOKEN=
-ARG CUSTOM_APP_REPO=
-ARG CUSTOM_APP_BRANCH=develop
+ARG CUSTOM_APPS=
 
-# Configurar git para conexiones más estables y resistentes a fallos
+# Configure git for more stable and fault-resistant connections
 RUN git config --global http.postBuffer 1048576000 && \
     git config --global http.lowSpeedLimit 0 && \
     git config --global http.lowSpeedTime 999999 && \
@@ -127,7 +126,7 @@ RUN git config --global http.postBuffer 1048576000 && \
     git config --global http.version HTTP/1.1 && \
     git config --global http.maxRequestBuffer 100M
 
-# Crear directorio frappe-bench y crear virtual environment
+# Create frappe-bench directory and virtual environment
 RUN mkdir -p /home/frappe/frappe-bench && \
     cd /home/frappe/frappe-bench && \
     python3 -m venv env && \
@@ -135,11 +134,11 @@ RUN mkdir -p /home/frappe/frappe-bench && \
     pip install --upgrade pip && \
     pip install frappe-bench
 
-# Inicializar bench con reintentos (bench init clona frappe automáticamente)
+# Initialize bench with retries (bench init automatically clones frappe)
 RUN cd /home/frappe/frappe-bench && \
     . env/bin/activate && \
     for i in 1 2 3 4 5; do \
-      echo "=== Intento $i de bench init ===" && \
+      echo "=== Attempt $i of bench init ===" && \
       bench init . \
         --frappe-branch=${FRAPPE_BRANCH} \
         --frappe-path=${FRAPPE_PATH} \
@@ -148,34 +147,48 @@ RUN cd /home/frappe/frappe-bench && \
         --skip-redis-config-generation \
         --ignore-exist \
         --verbose && break || \
-      (echo "Fallo en intento $i, limpiando..." && rm -rf apps/frappe sites && sleep 10); \
+      (echo "Failed attempt $i, cleaning up..." && rm -rf apps/frappe sites && sleep 10); \
     done && \
     if [ ! -d "apps/frappe" ]; then \
-      echo "ERROR: No se pudo inicializar bench después de 5 intentos" && exit 1; \
+      echo "ERROR: Could not initialize bench after 5 attempts" && exit 1; \
     fi
 
-# Configurar GitHub token si está disponible
+# Configure GitHub token if available
 RUN if [ -n "${GITHUB_TOKEN}" ]; then \
       git config --global credential.helper store && \
       echo "https://${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
       git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
     fi
 
-# Clonar tu app personalizada con reintentos
+# Clone custom apps with retries
+# Format: CUSTOM_APPS="repo1:branch1,repo2:branch2" or "repo1:branch1" for single app
 RUN cd /home/frappe/frappe-bench && \
     . env/bin/activate && \
-    for i in 1 2 3 4 5; do \
-      echo "=== Intento $i de clonar ${CUSTOM_APP_REPO} ===" && \
-      bench get-app --branch=${CUSTOM_APP_BRANCH} https://github.com/${CUSTOM_APP_REPO} && break || \
-      (echo "Fallo en intento $i, esperando 5s..." && sleep 5); \
-    done && \
-    if [ ! -d "apps/travel_agency_erp" ]; then \
-      echo "ERROR: No se pudo clonar la app personalizada" && exit 1; \
+    if [ -n "${CUSTOM_APPS}" ]; then \
+      echo "${CUSTOM_APPS}" | tr ',' '\n' | while IFS=':' read -r repo branch; do \
+        if [ -n "$repo" ]; then \
+          app_name=$(basename "$repo" .git) && \
+          echo "=== Installing app: $app_name from $repo (branch: ${branch:-develop}) ===" && \
+          for i in 1 2 3 4 5; do \
+            echo "--- Attempt $i of cloning $repo ---" && \
+            bench get-app --branch="${branch:-develop}" "https://github.com/$repo" && break || \
+            (echo "Failed attempt $i, waiting 5s..." && sleep 5); \
+          done && \
+          if [ ! -d "apps/$app_name" ]; then \
+            echo "ERROR: Could not clone app $app_name from $repo" && exit 1; \
+          fi; \
+        fi; \
+      done; \
+    else \
+      echo "No custom apps to install (CUSTOM_APPS is empty)"; \
     fi
 
-# Configuración final
+# Final configuration
 RUN cd /home/frappe/frappe-bench && \
-    echo "{}" > sites/common_site_config.json
+    echo "{}" > sites/common_site_config.json && \
+    if [ -n "${CUSTOM_APPS}" ]; then \
+      echo "${CUSTOM_APPS}" > /home/frappe/frappe-bench/.custom_apps_list; \
+    fi
 
 FROM base AS backend
 
