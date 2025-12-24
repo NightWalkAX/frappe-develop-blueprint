@@ -1,22 +1,22 @@
 #!/bin/bash
 set -e
 
-# Script de health check para monitorear el estado del deployment
-# Uso: ./health-check.sh
+# Health check script to monitor deployment status
+# Usage: ./health-check.sh
 
 SITE_URL=${SITE_URL:-"http://localhost:8080"}
 SITE_NAME=${FRAPPE_SITE_NAME:-"dev.example.com"}
 
-echo "🏥 Iniciando health check..."
+echo "🏥 Starting health check..."
 
 # 1. Verificar que los contenedores estén corriendo
 echo ""
 echo "📦 Estado de los contenedores:"
 docker compose ps
 
-# 2. Verificar conectividad HTTP
+# 2. Check HTTP connectivity
 echo ""
-echo "🌐 Verificando conectividad HTTP..."
+echo "🌐 Checking HTTP connectivity..."
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $SITE_URL)
 if [ $HTTP_STATUS -eq 200 ] || [ $HTTP_STATUS -eq 302 ]; then
     echo "✅ HTTP Status: $HTTP_STATUS (OK)"
@@ -25,42 +25,42 @@ else
     exit 1
 fi
 
-# 3. Verificar API
+# 3. Check API
 echo ""
-echo "🔌 Verificando API..."
+echo "🔌 Checking API..."
 API_RESPONSE=$(curl -s $SITE_URL/api/method/ping)
 if echo $API_RESPONSE | grep -q "pong"; then
-    echo "✅ API: Respondiendo correctamente"
+    echo "✅ API: Responding correctly"
 else
-    echo "❌ API: No responde correctamente"
-    echo "Respuesta: $API_RESPONSE"
+    echo "❌ API: Not responding correctly"
+    echo "Response: $API_RESPONSE"
 fi
 
-# 4. Verificar database
+# 4. Check database
 echo ""
-echo "🗄️ Verificando conexión a base de datos..."
+echo "🗄️ Checking database connection..."
 DB_CHECK=$(docker compose exec -T backend bench --site $SITE_NAME doctor 2>&1 | grep -i "database" || true)
 echo "$DB_CHECK"
 
-# 5. Verificar workers de queue
+# 5. Check queue workers
 echo ""
-echo "👷 Verificando workers de queue..."
+echo "👷 Checking queue workers..."
 WORKERS=$(docker compose ps | grep -E "queue|scheduler" | grep "Up" | wc -l)
 if [ $WORKERS -ge 3 ]; then
-    echo "✅ Workers: $WORKERS activos"
+    echo "✅ Workers: $WORKERS active"
 else
-    echo "⚠️ Workers: Solo $WORKERS activos (esperados: 3)"
+    echo "⚠️ Workers: Only $WORKERS active (expected: 3)"
 fi
 
-# 6. Uso de recursos
+# 6. Resource usage
 echo ""
-echo "💻 Uso de recursos:"
+echo "💻 Resource usage:"
 docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 
-# 7. Logs recientes de errores
+# 7. Recent error logs
 echo ""
-echo "📋 Últimos errores en logs (si hay):"
-docker compose logs --tail=20 --since=5m | grep -i "error" | tail -10 || echo "No se encontraron errores recientes"
+echo "📋 Latest errors in logs (if any):"
+docker compose logs --tail=20 --since=5m | grep -i "error" | tail -10 || echo "No recent errors found"
 
 echo ""
-echo "✅ Health check completado!"
+echo "✅ Health check completed!"

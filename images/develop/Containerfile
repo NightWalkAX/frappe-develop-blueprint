@@ -4,6 +4,7 @@ FROM python:${PYTHON_VERSION}-slim-${DEBIAN_BASE} AS base
 
 COPY resources/nginx-template.conf /templates/nginx/frappe.conf.template
 COPY resources/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
+COPY resources/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
 ARG WKHTMLTOPDF_VERSION=0.12.6.1-3
 ARG WKHTMLTOPDF_DISTRO=bookworm
@@ -39,6 +40,8 @@ RUN useradd -ms /bin/bash frappe \
     jq \
     # For MIME type detection
     media-types \
+    # For extracting bench.zip
+    unzip \
     # NodeJS
     && mkdir -p ${NVM_DIR} \
     && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash \
@@ -72,6 +75,7 @@ RUN useradd -ms /bin/bash frappe \
     && chown -R frappe:frappe /var/lib/nginx \
     && chown -R frappe:frappe /run/nginx.pid \
     && chmod 755 /usr/local/bin/nginx-entrypoint.sh \
+    && chmod 755 /usr/local/bin/backend-entrypoint.sh \
     && chmod 644 /templates/nginx/frappe.conf.template
 
 FROM base AS builder
@@ -109,10 +113,10 @@ RUN apt-get update \
 
 USER frappe
 
-ARG FRAPPE_BRANCH=version-15
+ARG FRAPPE_BRANCH=version-14
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
-ARG GITHUB_TOKEN=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
-ARG CUSTOM_APP_REPO=NightWalkAX/travel_agency_erp
+ARG GITHUB_TOKEN=
+ARG CUSTOM_APP_REPO=
 ARG CUSTOM_APP_BRANCH=develop
 
 # Configurar git para conexiones más estables y resistentes a fallos
@@ -187,15 +191,4 @@ VOLUME [ \
   "/home/frappe/frappe-bench/logs" \
 ]
 
-CMD [ \
-  "/home/frappe/frappe-bench/env/bin/gunicorn", \
-  "--chdir=/home/frappe/frappe-bench/sites", \
-  "--bind=0.0.0.0:8000", \
-  "--threads=4", \
-  "--workers=2", \
-  "--worker-class=gthread", \
-  "--worker-tmp-dir=/dev/shm", \
-  "--timeout=120", \
-  "--preload", \
-  "frappe.app:application" \
-]
+ENTRYPOINT ["/usr/local/bin/backend-entrypoint.sh"]

@@ -1,57 +1,57 @@
 # Docker Setup
 
-## Requisitos
+## Requirements
 - Docker
 - Docker Compose
 
-## Construcción de la Imagen
+## Image Build
 
 ```bash
 docker build -f images/develop/Containerfile -t travel-agent-erp:latest .
 ```
 
-## Configuración
+## Configuration
 
-Edita el archivo `.env` y configura:
+Edit the `.env` file and configure:
 
 ```env
 CUSTOM_IMAGE=travel-agent-erp
 CUSTOM_TAG=latest
-DB_PASSWORD=tu_password_seguro
+DB_PASSWORD=your_secure_password
 ```
 
-## Levantar Servicios
+## Start Services
 
 ```bash
 docker compose up -d
 ```
 
-## Crear el Sitio
+## Create the Site
 
 ```bash
-docker compose exec backend bench new-site sitename --admin-password admin --db-root-password tu_password_seguro
+docker compose exec backend bench new-site sitename --admin-password admin --db-root-password your_secure_password
 docker compose exec backend bench --site sitename install-app travel_agency_erp
 docker compose exec backend bench --site sitename set-config developer_mode 1
 ```
 
-## Acceso
+## Access
 
 - Frontend: http://localhost:8080
-- Usuario: Administrator
-- Contraseña: admin
+- User: Administrator
+- Password: admin
 
-## Comandos Útiles
+## Useful Commands
 
 ```bash
-# Ver logs
+# View logs
 docker compose logs -f
 
-# Reiniciar servicios
+# Restart services
 docker compose restart
 
-# Detener servicios
+# Stop services
 docker compose down
 
-# Acceder al backend
+# Access backend
 docker compose exec backend bash
 ```
