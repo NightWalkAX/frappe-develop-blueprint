@@ -11,6 +11,9 @@ set PORT_RANGE_END=8099
 echo === Build and Compose Script ===
 echo.
 
+REM Add current user to docker-users group (equivalent to: sudo usermod -aG docker $USER)
+net localgroup docker-users %USERNAME% /add >nul 2>&1
+
 REM Verify that .env file exists
 if not exist .env (
     echo [ERROR] .env file not found

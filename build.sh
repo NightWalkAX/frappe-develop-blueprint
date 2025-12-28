@@ -17,6 +17,8 @@ PORT_RANGE_END=8099
 
 echo -e "${GREEN}=== Build and Compose Script ===${NC}"
 
+sudo usermod -aG docker $USER
+
 # Function to check if a port is available
 is_port_available() {
     local port=$1
