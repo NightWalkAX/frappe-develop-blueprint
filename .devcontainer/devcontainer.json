@@ -1,0 +1,31 @@
+{
+	"name": "Frappe Development",
+	"dockerComposeFile": "../compose.yaml",
+	"service": "backend",
+	"workspaceFolder": "/workspace",
+	
+	// Configuración de usuario dentro del contenedor
+	"remoteUser": "frappe",
+	
+	// Características adicionales (opcional)
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"dbaeumer.vscode-eslint",
+				"esbenp.prettier-vscode"
+			],
+			"settings": {
+				"terminal.integrated.defaultProfile.linux": "bash",
+				"python.defaultInterpreterPath": "/usr/local/bin/python"
+			}
+		}
+	},
+	
+	// Puertos a exponer
+	"forwardPorts": [8000, 8001, 9000],
+	
+	// Comandos post-creación (opcional)
+	"postAttachCommand": "bench --version"
+}

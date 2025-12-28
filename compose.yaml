@@ -1,9 +1,9 @@
 x-customizable-image: &customizable_image
-  # By default the image used only contains the `frappe` and `erpnext` apps.
+  # By default the image used contains the `frappe` framework and custom apps.
   # See https://github.com/frappe/frappe_docker/blob/main/docs/container-setup/02-build-setup.md#define-custom-apps
   # about using custom images.
-  image: ${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-$ERPNEXT_VERSION}
-  pull_policy: ${PULL_POLICY:-always}
+  image: ${CUSTOM_IMAGE:-frappe-custom}:${CUSTOM_TAG:-latest}
+  pull_policy: ${PULL_POLICY:-never}
   restart: ${RESTART_POLICY:-unless-stopped}
 
 x-depends-on-configurator: &depends_on_configurator
@@ -143,7 +143,6 @@ services:
       timeout: 5s
       retries: 5
 
-# ERPNext requires local assets access (Frappe does not)
 volumes:
   sites:
   mariadb-data:

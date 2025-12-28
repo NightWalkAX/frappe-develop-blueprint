@@ -9,6 +9,7 @@ COPY resources/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 ARG WKHTMLTOPDF_VERSION=0.12.6.1-3
 ARG WKHTMLTOPDF_DISTRO=bookworm
 ARG NODE_VERSION=20.19.2
+ARG VSCODE_SERVER_VERSION=994fd12f8d3a5aa16f17d42c041e5809167e845a
 ENV NVM_DIR=/home/frappe/.nvm
 ENV PATH=${NVM_DIR}/versions/node/v${NODE_VERSION}/bin/:${PATH}
 
@@ -77,6 +78,17 @@ RUN useradd -ms /bin/bash frappe \
     && chmod 755 /usr/local/bin/nginx-entrypoint.sh \
     && chmod 755 /usr/local/bin/backend-entrypoint.sh \
     && chmod 644 /templates/nginx/frappe.conf.template
+
+# Install VS Code Server for dev containers
+RUN if [ "$(uname -m)" = "aarch64" ]; then export VSCODE_ARCH=arm64; fi \
+    && if [ "$(uname -m)" = "x86_64" ]; then export VSCODE_ARCH=x64; fi \
+    && mkdir -p /home/frappe/.vscode-server/bin/${VSCODE_SERVER_VERSION} \
+    && curl -sSL "https://update.code.visualstudio.com/commit:${VSCODE_SERVER_VERSION}/server-linux-${VSCODE_ARCH}/stable" \
+       -o /tmp/vscode-server.tar.gz \
+    && tar -xzf /tmp/vscode-server.tar.gz -C /home/frappe/.vscode-server/bin/${VSCODE_SERVER_VERSION} --strip-components=1 \
+    && rm /tmp/vscode-server.tar.gz \
+    && chown -R frappe:frappe /home/frappe/.vscode-server \
+    && echo "VS Code Server ${VSCODE_SERVER_VERSION} installed successfully"
 
 FROM base AS builder
 
