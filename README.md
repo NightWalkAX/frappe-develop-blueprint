@@ -83,6 +83,18 @@ GITHUB_TOKEN=github_pat_xxxxxxxxxxxxx
 ./build.sh
 ```
 
+The script will automatically:
+- 🔍 **Detect an available port** in the range 8000-8099
+- 🏗️ Build the Docker image with your custom apps
+- 🚀 Start all services with the detected port
+
+**Port auto-detection**: Perfect for running multiple instances on the same VM. Each instance automatically gets a unique port without manual configuration.
+
+To force a specific port, set `FRAPPE_PORT` in your `.env` file:
+```bash
+FRAPPE_PORT=8005  # Optional: force specific port
+```
+
 #### Manual build:
 ```bash
 docker build \
@@ -136,9 +148,11 @@ exit
 
 ### 7. Access Your ERP
 
-- **Frontend**: http://localhost:8080
+- **Frontend**: http://localhost:PORT (port shown after build.sh completes)
 - **User**: Administrator
 - **Password**: admin (or what you set in `ADMIN_PASSWORD`)
+
+> 💡 **Tip**: The port is automatically detected and displayed at the end of the build process. Multiple developers can run their own instance on the same VM without port conflicts.
 
 ## 🛠️ Management Scripts
 

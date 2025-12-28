@@ -226,6 +226,9 @@ USER frappe
 
 COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
 
+# Copy bench_files contents if exists (will be applied at runtime via entrypoint)
+COPY --chown=frappe:frappe bench_files/ /bench_files/
+
 WORKDIR /home/frappe/frappe-bench
 
 VOLUME [ \

@@ -1,10 +1,10 @@
 @echo off
-REM Script to build custom image on Windows
+REM Script to build and compose the custom image and services
 REM Reads variables from .env file
 
 setlocal enabledelayedexpansion
 
-echo === Build Script for Custom Image ===
+echo === Build and Compose Script ===
 echo.
 
 REM Verify that .env file exists
@@ -33,13 +33,16 @@ if "%CUSTOM_APPS%"=="" (
 )
 
 REM Default values
-if "%FRAPPE_BRANCH%"=="" set FRAPPE_BRANCH=version-14
+if "%FRAPPE_BRANCH%"=="" set FRAPPE_BRANCH=version-15
 if "%PYTHON_VERSION%"=="" set PYTHON_VERSION=3.11.6
+if "%CUSTOM_IMAGE%"=="" set CUSTOM_IMAGE=frappe-custom
+if "%CUSTOM_TAG%"=="" set CUSTOM_TAG=latest
 
 echo Configuration:
 echo   CUSTOM_APPS: %CUSTOM_APPS%
 echo   FRAPPE_BRANCH: %FRAPPE_BRANCH%
 echo   PYTHON_VERSION: %PYTHON_VERSION%
+echo   IMAGE: %CUSTOM_IMAGE%:%CUSTOM_TAG%
 if not "%GITHUB_TOKEN%"=="" (
     echo   GITHUB_TOKEN: ******* ^(configured^)
 ) else (
@@ -56,16 +59,36 @@ docker build ^
     --build-arg CUSTOM_APPS=%CUSTOM_APPS% ^
     --build-arg FRAPPE_BRANCH=%FRAPPE_BRANCH% ^
     --build-arg PYTHON_VERSION=%PYTHON_VERSION% ^
-    -t frappe-custom:latest ^
+    -t %CUSTOM_IMAGE%:%CUSTOM_TAG% ^
     -f images/develop/Containerfile ^
     .
 
 if %errorlevel% equ 0 (
     echo.
-    echo [OK] Image built successfully: frappe-custom:latest
+    echo [OK] Image built successfully: %CUSTOM_IMAGE%:%CUSTOM_TAG%
 ) else (
     echo.
     echo [ERROR] Error building image
+    exit /b 1
+)
+
+REM Compose and start services
+echo Composing and starting services with docker-compose...
+echo.
+
+docker-compose -f compose.yaml up -d
+
+if %errorlevel% equ 0 (
+    echo.
+    echo [OK] Services started successfully
+    echo Waiting for services to initialize (30 seconds)...
+    timeout /t 30 /nobreak
+    echo.
+    echo Services status:
+    docker-compose -f compose.yaml ps
+) else (
+    echo.
+    echo [ERROR] Error starting services
     exit /b 1
 )
 

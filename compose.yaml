@@ -55,23 +55,35 @@ services:
     platform: linux/amd64
     networks:
       - frappe-network
+    environment:
+      DB_HOST: ${DB_HOST:-mariadb}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_ROOT_USER: root
+      DB_ROOT_PASSWORD: ${DB_PASSWORD:-frappe_password}
+      SITE_NAME: ${SITE_NAME:-example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      REDIS_CACHE: ${REDIS_CACHE:-redis-cache:6379}
+      FRAPPE_PORT: 8000
 
   frontend:
     <<: *customizable_image
     platform: linux/amd64
     networks:
       - frappe-network
+    entrypoint: []
     command:
       - nginx-entrypoint.sh
     environment:
       BACKEND: backend:8000
       SOCKETIO: websocket:9000
-      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-$$host}
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-agency.erp}
       UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
       UPSTREAM_REAL_IP_HEADER: ${UPSTREAM_REAL_IP_HEADER:-X-Forwarded-For}
       UPSTREAM_REAL_IP_RECURSIVE: ${UPSTREAM_REAL_IP_RECURSIVE:-off}
       PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120}
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
+    ports:
+      - "127.0.0.1:${FRAPPE_PORT:-8000}:8080"
     volumes:
       - sites:/home/frappe/frappe-bench/sites
     depends_on:
@@ -83,6 +95,7 @@ services:
     platform: linux/amd64
     networks:
       - frappe-network
+    entrypoint: []
     command:
       - node
       - /home/frappe/frappe-bench/apps/frappe/socketio.js
@@ -94,6 +107,7 @@ services:
     platform: linux/amd64
     networks:
       - frappe-network
+    entrypoint: []
     command: bench worker --queue short,default
 
   queue-long:
@@ -101,6 +115,7 @@ services:
     platform: linux/amd64
     networks:
       - frappe-network
+    entrypoint: []
     command: bench worker --queue long,default,short
 
   scheduler:
@@ -108,6 +123,7 @@ services:
     platform: linux/amd64
     networks:
       - frappe-network
+    entrypoint: []
     command: bench schedule
 
   mariadb:
@@ -121,16 +137,15 @@ services:
       - --skip-character-set-client-handshake
       - --skip-innodb-read-only-compressed # Temporary fix for MariaDB 10.6
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-admin}
-      MYSQL_DATABASE: ${DB_NAME:-}
-      MYSQL_USER: ${DB_USER:-}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-frappe_password}
+      MYSQL_DATABASE: ${DB_NAME:-frappe_db}
+      MYSQL_USER: ${DB_USER:-frappe}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-frappe_password}
     volumes:
       - mariadb-data:/var/lib/mysql
-    ports:
-      - "${DB_PORT:-3306}:3306"
+      - ./resources/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: mysqladmin ping -h localhost --password=${DB_PASSWORD:-admin}
+      test: mysqladmin ping -h localhost --password=${DB_PASSWORD:-frappe_password}
       interval: 10s
       timeout: 5s
       retries: 5

@@ -6,33 +6,29 @@ cd /home/frappe/frappe-bench
 # Environment variables with default values
 SITE_NAME="${SITE_NAME:-dpe.erp.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
-DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-admin}"
+DB_HOST="${DB_HOST:-mariadb}"
+DB_PORT="${DB_PORT:-3306}"
+DB_ROOT_USER="${DB_ROOT_USER:-root}"
+DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-frappe_password}"
+DB_NAME="${DB_NAME:-frappe_db}"
+REDIS_CACHE="${REDIS_CACHE:-redis-cache:6379}"
 
 echo "🚀 Starting site configuration..."
 
-# Extract bench.zip if present in any custom app (executed at runtime when volumes are mounted)
-echo "🔍 Checking for bench.zip files in custom apps..."
-extracted=false
-for app_dir in apps/*; do
-  if [ -d "$app_dir" ] && [ -f "$app_dir/bench.zip" ]; then
-    app_name=$(basename "$app_dir")
-    echo "📦 Found bench.zip in $app_name, extracting to bench root..."
-    if unzip -o "$app_dir/bench.zip" -d /home/frappe/frappe-bench/; then
-      echo "✅ Contents extracted successfully from $app_name"
-      extracted=true
-      break
-    else
-      echo "❌ Failed to extract bench.zip from $app_name"
-    fi
-  fi
-done
-if [ "$extracted" = "false" ]; then
-  echo "ℹ️  No bench.zip found in custom apps"
+# Copy bench_files contents to bench root if /bench_files directory exists
+echo "🔍 Checking for bench_files contents..."
+if [ -d "/bench_files" ] && [ "$(ls -A /bench_files 2>/dev/null)" ]; then
+  echo "📦 Found bench_files directory, copying contents to bench root..."
+  cp -rv /bench_files/* /home/frappe/frappe-bench/ 2>/dev/null || true
+  cp -rv /bench_files/.* /home/frappe/frappe-bench/ 2>/dev/null || true
+  echo "✅ bench_files contents copied successfully"
+else
+  echo "ℹ️  No bench_files directory found or it's empty"
 fi
 
 # Wait for database to be ready
 echo "⏳ Waiting for MariaDB to be available..."
-until mysql -h"${DB_HOST}" -uroot -p"${DB_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
+until mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_ROOT_USER}" -p"${DB_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
     echo "MariaDB is not ready - waiting..."
     sleep 2
 done
@@ -40,20 +36,31 @@ echo "✅ MariaDB is ready"
 
 # Wait for Redis to be ready
 echo "⏳ Waiting for Redis to be available..."
-until redis-cli -h "${REDIS_CACHE}" ping >/dev/null 2>&1; do
-    echo "Redis is not ready - waiting..."
+max_attempts=30
+attempt=0
+while [ $attempt -lt $max_attempts ]; do
+    if python3 -c "import socket; socket.create_connection(('${REDIS_CACHE%:*}', ${REDIS_CACHE##*:}), timeout=2)" 2>/dev/null; then
+        echo "✅ Redis is ready"
+        break
+    fi
+    attempt=$((attempt + 1))
+    echo "Redis is not ready - waiting... ($attempt/$max_attempts)"
     sleep 2
 done
-echo "✅ Redis is ready"
+
+if [ $attempt -eq $max_attempts ]; then
+    echo "⚠️  Redis connection timeout - continuing anyway"
+fi
 
 # Check if site already exists
 if [ ! -d "sites/${SITE_NAME}" ]; then
     echo "📦 Creating new site: ${SITE_NAME}"
     bench new-site "${SITE_NAME}" \
         --admin-password "${ADMIN_PASSWORD}" \
-        --db-root-password "${DB_ROOT_PASSWORD}" \
         --db-host "${DB_HOST}" \
-        --db-name "${DB_NAME:-_$(echo ${SITE_NAME} | tr '.' '_')}" \
+        --db-port "${DB_PORT}" \
+        --db-root-username "${DB_ROOT_USER}" \
+        --db-root-password "${DB_ROOT_PASSWORD}" \
         --no-mariadb-socket \
         --force
     
@@ -104,7 +111,8 @@ echo "🎉 Site ready: ${SITE_NAME}"
 echo "👤 User: Administrator"
 echo "🔑 Password: ${ADMIN_PASSWORD}"
 
-# Start server using restart.py
-echo "🚀 Starting server with restart.py..."
+# Start Frappe server
+FRAPPE_PORT="${FRAPPE_PORT:-8000}"
+echo "🚀 Starting Frappe server on port ${FRAPPE_PORT}..."
 cd /home/frappe/frappe-bench
-exec /home/frappe/frappe-bench/env/bin/python restart.py
+exec bench --site "${SITE_NAME}" serve --port "${FRAPPE_PORT}"
