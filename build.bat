@@ -4,6 +4,10 @@ REM Reads variables from .env file
 
 setlocal enabledelayedexpansion
 
+REM Port range configuration
+set PORT_RANGE_START=8000
+set PORT_RANGE_END=8099
+
 echo === Build and Compose Script ===
 echo.
 
@@ -38,11 +42,47 @@ if "%PYTHON_VERSION%"=="" set PYTHON_VERSION=3.11.6
 if "%CUSTOM_IMAGE%"=="" set CUSTOM_IMAGE=frappe-custom
 if "%CUSTOM_TAG%"=="" set CUSTOM_TAG=latest
 
+REM Find available port dynamically
+echo Searching for available port in range %PORT_RANGE_START%-%PORT_RANGE_END%...
+set FRAPPE_PORT=
+set PREFERRED_PORT=%FRAPPE_PORT%
+
+REM Try preferred port first if set
+if not "%PREFERRED_PORT%"=="" (
+    netstat -an | findstr /r ":%PREFERRED_PORT% " >nul 2>&1
+    if errorlevel 1 (
+        set FRAPPE_PORT=%PREFERRED_PORT%
+        goto :port_found
+    ) else (
+        echo [WARNING] Preferred port %PREFERRED_PORT% not available, searching for alternative...
+    )
+)
+
+REM Search for available port in range
+for /l %%p in (%PORT_RANGE_START%,1,%PORT_RANGE_END%) do (
+    if "!FRAPPE_PORT!"=="" (
+        netstat -an | findstr /r ":%%p " >nul 2>&1
+        if errorlevel 1 (
+            set FRAPPE_PORT=%%p
+        )
+    )
+)
+
+if "%FRAPPE_PORT%"=="" (
+    echo [ERROR] No available ports found in range %PORT_RANGE_START%-%PORT_RANGE_END%
+    exit /b 1
+)
+
+:port_found
+echo [OK] Available port found: %FRAPPE_PORT%
+echo.
+
 echo Configuration:
 echo   CUSTOM_APPS: %CUSTOM_APPS%
 echo   FRAPPE_BRANCH: %FRAPPE_BRANCH%
 echo   PYTHON_VERSION: %PYTHON_VERSION%
 echo   IMAGE: %CUSTOM_IMAGE%:%CUSTOM_TAG%
+echo   FRAPPE_PORT: %FRAPPE_PORT% ^(auto-detected^)
 if not "%GITHUB_TOKEN%"=="" (
     echo   GITHUB_TOKEN: ******* ^(configured^)
 ) else (
@@ -73,7 +113,7 @@ if %errorlevel% equ 0 (
 )
 
 REM Compose and start services
-echo Composing and starting services with docker-compose...
+echo Starting services with docker-compose...
 echo.
 
 docker-compose -f compose.yaml up -d
@@ -81,11 +121,84 @@ docker-compose -f compose.yaml up -d
 if %errorlevel% equ 0 (
     echo.
     echo [OK] Services started successfully
-    echo Waiting for services to initialize (30 seconds)...
-    timeout /t 30 /nobreak
+    echo Waiting for services to initialize ^(30 seconds^)...
+    timeout /t 30 /nobreak >nul
     echo.
     echo Services status:
     docker-compose -f compose.yaml ps
+    echo.
+    
+    REM Verify service connectivity
+    echo Verifying service connectivity...
+    set ALL_OK=true
+    
+    REM Check Backend health
+    echo   Checking Backend health...
+    docker-compose ps 2>nul | findstr /i "backend.*up\|backend.*running" >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo   [OK] Backend is running
+    ) else (
+        echo   [FAIL] Backend check failed
+        set ALL_OK=false
+    )
+    
+    REM Check MariaDB health
+    echo   Checking MariaDB health...
+    docker-compose ps 2>nul | findstr /i "mariadb.*healthy" >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo   [OK] MariaDB is healthy
+    ) else (
+        echo   [FAIL] MariaDB health check failed
+        set ALL_OK=false
+    )
+    
+    REM Check Redis Cache health
+    echo   Checking Redis Cache health...
+    docker-compose ps 2>nul | findstr /i "redis-cache.*healthy" >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo   [OK] Redis Cache is healthy
+    ) else (
+        echo   [FAIL] Redis Cache health check failed
+        set ALL_OK=false
+    )
+    
+    REM Check Redis Queue health
+    echo   Checking Redis Queue health...
+    docker-compose ps 2>nul | findstr /i "redis-queue.*healthy" >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo   [OK] Redis Queue is healthy
+    ) else (
+        echo   [FAIL] Redis Queue health check failed
+        set ALL_OK=false
+    )
+    
+    echo.
+    
+    REM Final result
+    if "!ALL_OK!"=="true" (
+        echo ============================================================
+        echo [OK] All services are running and connected successfully!
+        echo ============================================================
+        echo.
+        echo Environment Information:
+        echo   Database Host: mariadb:3306
+        echo   Database Name: %DB_NAME%
+        echo   Database User: %DB_USER%
+        echo   Site Name: %SITE_NAME%
+        echo   Admin Email: Administrator
+        echo   Admin Password: %ADMIN_PASSWORD%
+        echo.
+        echo ============================================================
+        echo   Access your ERP at: http://localhost:%FRAPPE_PORT%
+        echo ============================================================
+    ) else (
+        echo ============================================================
+        echo [WARNING] Some services may not be fully initialized yet.
+        echo Check logs with: docker-compose logs -f
+        echo.
+        echo When ready, access your ERP at: http://localhost:%FRAPPE_PORT%
+        echo ============================================================
+    )
 ) else (
     echo.
     echo [ERROR] Error starting services
