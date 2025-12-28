@@ -20,6 +20,8 @@ services:
   configurator:
     <<: *backend_defaults
     platform: linux/amd64
+    networks:
+      - frappe-network
     entrypoint:
       - bash
       - -c
@@ -51,10 +53,14 @@ services:
   backend:
     <<: *backend_defaults
     platform: linux/amd64
+    networks:
+      - frappe-network
 
   frontend:
     <<: *customizable_image
     platform: linux/amd64
+    networks:
+      - frappe-network
     command:
       - nginx-entrypoint.sh
     environment:
@@ -75,6 +81,8 @@ services:
   websocket:
     <<: [*depends_on_configurator, *customizable_image]
     platform: linux/amd64
+    networks:
+      - frappe-network
     command:
       - node
       - /home/frappe/frappe-bench/apps/frappe/socketio.js
@@ -84,21 +92,29 @@ services:
   queue-short:
     <<: *backend_defaults
     platform: linux/amd64
+    networks:
+      - frappe-network
     command: bench worker --queue short,default
 
   queue-long:
     <<: *backend_defaults
     platform: linux/amd64
+    networks:
+      - frappe-network
     command: bench worker --queue long,default,short
 
   scheduler:
     <<: *backend_defaults
     platform: linux/amd64
+    networks:
+      - frappe-network
     command: bench schedule
 
   mariadb:
     image: mariadb:10.6
     restart: ${RESTART_POLICY:-unless-stopped}
+    networks:
+      - frappe-network
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -122,6 +138,8 @@ services:
   redis-cache:
     image: redis:7-alpine
     restart: ${RESTART_POLICY:-unless-stopped}
+    networks:
+      - frappe-network
     command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis-cache-data:/data
@@ -134,6 +152,8 @@ services:
   redis-queue:
     image: redis:7-alpine
     restart: ${RESTART_POLICY:-unless-stopped}
+    networks:
+      - frappe-network
     command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis-queue-data:/data
@@ -148,3 +168,7 @@ volumes:
   mariadb-data:
   redis-cache-data:
   redis-queue-data:
+
+networks:
+  frappe-network:
+    driver: bridge

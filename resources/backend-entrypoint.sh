@@ -10,6 +10,26 @@ DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-admin}"
 
 echo "🚀 Starting site configuration..."
 
+# Extract bench.zip if present in any custom app (executed at runtime when volumes are mounted)
+echo "🔍 Checking for bench.zip files in custom apps..."
+extracted=false
+for app_dir in apps/*; do
+  if [ -d "$app_dir" ] && [ -f "$app_dir/bench.zip" ]; then
+    app_name=$(basename "$app_dir")
+    echo "📦 Found bench.zip in $app_name, extracting to bench root..."
+    if unzip -o "$app_dir/bench.zip" -d /home/frappe/frappe-bench/; then
+      echo "✅ Contents extracted successfully from $app_name"
+      extracted=true
+      break
+    else
+      echo "❌ Failed to extract bench.zip from $app_name"
+    fi
+  fi
+done
+if [ "$extracted" = "false" ]; then
+  echo "ℹ️  No bench.zip found in custom apps"
+fi
+
 # Wait for database to be ready
 echo "⏳ Waiting for MariaDB to be available..."
 until mysql -h"${DB_HOST}" -uroot -p"${DB_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
