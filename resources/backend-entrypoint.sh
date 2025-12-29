@@ -4,7 +4,7 @@ set -e
 cd /home/frappe/frappe-bench
 
 # Environment variables with default values
-SITE_NAME="${SITE_NAME:-dpe.erp.local}"
+SITE_NAME="${SITE_NAME:-erp.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 DB_HOST="${DB_HOST:-mariadb}"
 DB_PORT="${DB_PORT:-3306}"

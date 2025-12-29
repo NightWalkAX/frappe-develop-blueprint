@@ -6,89 +6,89 @@
 
 ## Quick Start
 
-### 1. Configuración inicial
+### 1. Initial Setup
 
-Copia el archivo de ejemplo y configura las variables:
+Copy the example file and configure the variables:
 
 ```bash
 cp .env.example .env
 ```
 
-Edita `.env` y configura al menos:
+Edit `.env` and configure at least:
 
 ```env
-# Aplicaciones personalizadas (opcional)
-CUSTOM_APPS=tu-organizacion/tu-app:develop
+# Custom applications (optional)
+CUSTOM_APPS=your-organization/your-app:develop
 
-# Configuración de la base de datos
+# Database configuration
 DB_HOST=mariadb
 DB_PORT=3306
-DB_PASSWORD=cambia_esto_en_produccion
+DB_PASSWORD=change_this_in_production
 DB_NAME=frappe_db
 DB_USER=frappe
 
-# Configuración de Redis
+# Redis configuration
 REDIS_CACHE=redis-cache:6379
 REDIS_QUEUE=redis-queue:6379
 
-# Configuración del sitio
-SITE_NAME=dpe.erp.local
+# Site configuration
+SITE_NAME=erp.local
 ADMIN_PASSWORD=admin
 ```
 
-### 2. Construir la imagen
+### 2. Build the Image
 
-**En Linux/macOS:**
+**On Linux/macOS:**
 ```bash
 ./build.sh
 ```
 
-**En Windows:**
+**On Windows:**
 ```cmd
 build.bat
 ```
 
-O manualmente:
+Or manually:
 ```bash
 docker build -f images/develop/Containerfile -t frappe-custom:latest .
 ```
 
-### 3. Actualizar el compose.yaml
+### 3. Update compose.yaml
 
-Configura la imagen personalizada en `.env`:
+Configure the custom image in `.env`:
 
 ```env
 CUSTOM_IMAGE=frappe-custom
 CUSTOM_TAG=latest
 ```
 
-### 4. Iniciar los servicios
+### 4. Start the Services
 
 ```bash
 docker compose up -d
 ```
 
-Esto iniciará:
-- **mariadb**: Base de datos MariaDB 10.6
-- **redis-cache**: Redis para caché
-- **redis-queue**: Redis para colas
-- **configurator**: Configura el entorno inicial
-- **backend**: Servidor backend de Frappe
-- **frontend**: Servidor web Nginx
-- **websocket**: Servidor WebSocket
-- **queue-short**: Worker para tareas cortas
-- **queue-long**: Worker para tareas largas
-- **scheduler**: Programador de tareas
+This will start:
+- **mariadb**: MariaDB 10.6 database
+- **redis-cache**: Redis for caching
+- **redis-queue**: Redis for queues
+- **configurator**: Configures the initial environment
+- **backend**: Frappe backend server
+- **frontend**: Nginx web server
+- **websocket**: WebSocket server
+- **queue-short**: Worker for short tasks
+- **queue-long**: Worker for long tasks
+- **scheduler**: Task scheduler
 
-### 5. Verificar que los servicios estén corriendo
+### 5. Verify Services Are Running
 
 ```bash
 docker compose ps
 ```
 
-Todos los servicios deben estar en estado "healthy" o "running".
+All services should be in "healthy" or "running" state.
 
-## Crear el Sitio
+## Create the Site
 
 ```bash
 docker compose exec backend bench new-site ${SITE_NAME} \
@@ -96,69 +96,69 @@ docker compose exec backend bench new-site ${SITE_NAME} \
   --db-root-password ${DB_PASSWORD}
 ```
 
-Si tienes aplicaciones personalizadas, instálalas:
+If you have custom applications, install them:
 
 ```bash
-docker compose exec backend bench --site ${SITE_NAME} install-app nombre_app
+docker compose exec backend bench --site ${SITE_NAME} install-app app_name
 ```
 
-Habilitar modo desarrollador (opcional):
+Enable developer mode (optional):
 
 ```bash
 docker compose exec backend bench --site ${SITE_NAME} set-config developer_mode 1
 docker compose restart backend
 ```
 
-## Acceso
+## Access
 
 - Frontend: http://localhost:8080
-- Usuario: Administrator
-- Contraseña: la que configuraste en `ADMIN_PASSWORD`
+- Username: Administrator
+- Password: the one you configured in `ADMIN_PASSWORD`
 
-## Comandos Útiles
+## Useful Commands
 
-### Ver logs
+### View Logs
 
 ```bash
-# Todos los servicios
+# All services
 docker compose logs -f
 
-# Servicio específico
+# Specific service
 docker compose logs -f backend
 docker compose logs -f mariadb
 docker compose logs -f redis-cache
 ```
 
-### Reiniciar servicios
+### Restart Services
 
 ```bash
-# Todos
+# All
 docker compose restart
 
-# Específico
+# Specific
 docker compose restart backend
 ```
 
-### Detener servicios
+### Stop Services
 
 ```bash
-# Detener sin eliminar volúmenes
+# Stop without removing volumes
 docker compose down
 
-# Detener y eliminar volúmenes (¡cuidado! se perderán los datos)
+# Stop and remove volumes (caution! data will be lost)
 docker compose down -v
 ```
 
-### Acceder al backend
+### Access the Backend
 
 ```bash
 docker compose exec backend bash
 ```
 
-### Ejecutar comandos de bench
+### Run Bench Commands
 
 ```bash
-# Migrar
+# Migrate
 docker compose exec backend bench --site ${SITE_NAME} migrate
 
 # Console
@@ -168,7 +168,7 @@ docker compose exec backend bench --site ${SITE_NAME} console
 docker compose exec backend bench --site ${SITE_NAME} clear-cache
 ```
 
-### Backup y Restore
+### Backup and Restore
 
 ```bash
 # Backup
@@ -178,59 +178,59 @@ docker compose exec backend bench --site ${SITE_NAME} backup
 docker compose exec backend bench --site ${SITE_NAME} restore /path/to/backup
 ```
 
-## Solución de Problemas
+## Troubleshooting
 
-### El sitio no carga
+### Site Not Loading
 
-1. Verifica que todos los servicios estén corriendo:
+1. Verify all services are running:
    ```bash
    docker compose ps
    ```
 
-2. Verifica los logs:
+2. Check the logs:
    ```bash
    docker compose logs -f backend
    ```
 
-3. Verifica la conectividad con MariaDB:
+3. Verify MariaDB connectivity:
    ```bash
    docker compose exec backend bench --site ${SITE_NAME} mariadb
    ```
 
-4. Verifica la conectividad con Redis:
+4. Verify Redis connectivity:
    ```bash
    docker compose exec redis-cache redis-cli ping
    docker compose exec redis-queue redis-cli ping
    ```
 
-### Error de conexión a la base de datos
+### Database Connection Error
 
-Verifica que MariaDB esté corriendo y las credenciales en `.env` sean correctas:
+Verify MariaDB is running and the credentials in `.env` are correct:
 
 ```bash
 docker compose logs mariadb
 docker compose exec mariadb mysql -u root -p${DB_PASSWORD}
 ```
 
-### Error de conexión a Redis
+### Redis Connection Error
 
-Verifica que Redis esté corriendo:
+Verify Redis is running:
 
 ```bash
 docker compose exec redis-cache redis-cli ping
 docker compose exec redis-queue redis-cli ping
 ```
 
-## Estructura de Volúmenes
+## Volume Structure
 
-El `compose.yaml` crea los siguientes volúmenes persistentes:
+The `compose.yaml` creates the following persistent volumes:
 
-- `sites`: Archivos del sitio Frappe
-- `mariadb-data`: Datos de la base de datos
-- `redis-cache-data`: Datos de Redis caché
-- `redis-queue-data`: Datos de Redis colas
+- `sites`: Frappe site files
+- `mariadb-data`: Database data
+- `redis-cache-data`: Redis cache data
+- `redis-queue-data`: Redis queue data
 
-Para ver los volúmenes:
+To view the volumes:
 
 ```bash
 docker volume ls | grep mytime

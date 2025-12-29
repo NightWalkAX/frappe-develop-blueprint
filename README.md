@@ -1,8 +1,8 @@
-# DP Electric (MyTime) ERP - Development Environment
+# Frappe ERP - Development Environment
 
-> 🚀 Plug-and-play Docker development environment for MyTime ERP
+> 🚀 Plug-and-play Docker development environment for Frappe-based ERP.
 
-This repository provides a complete, production-ready development environment for the MyTime ERP system based on Frappe framework.
+This repository provides a complete development environment for a system based on Frappe framework.
 
 ## 📁 Repository Structure
 
@@ -51,14 +51,14 @@ Edit `.env` file with your settings:
 CUSTOM_APPS=YourUsername/your_app:develop,YourUsername/another_app:main
 
 # Site Configuration (auto-setup)
-SITE_NAME=dpe.erp.local
+SITE_NAME=erp.local
 ADMIN_PASSWORD=admin
 
 # Database
 DB_PASSWORD=your_secure_password
 
 # Image Configuration
-CUSTOM_IMAGE=mytime-erp
+CUSTOM_IMAGE=frappe-erp
 CUSTOM_TAG=latest
 
 # For private repositories
@@ -309,7 +309,7 @@ docker compose exec database mysql -uroot -p${DB_PASSWORD}
 
 ## 📝 License
 
-This development environment template is part of the MyTime ERP project.
+This development environment template is part of the Frappe ERP project.
 
 ## 🤝 Contributing
 
