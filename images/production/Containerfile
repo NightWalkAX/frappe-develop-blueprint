@@ -1,0 +1,261 @@
+ARG PYTHON_VERSION=3.11.6
+ARG DEBIAN_BASE=bookworm
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_BASE} AS base
+
+COPY resources/nginx-template.conf /templates/nginx/frappe.conf.template
+COPY resources/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
+COPY resources/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
+
+ARG WKHTMLTOPDF_VERSION=0.12.6.1-3
+ARG WKHTMLTOPDF_DISTRO=bookworm
+ARG NODE_VERSION=20.19.2
+ARG VSCODE_SERVER_VERSION=994fd12f8d3a5aa16f17d42c041e5809167e845a
+ENV NVM_DIR=/home/frappe/.nvm
+ENV PATH=${NVM_DIR}/versions/node/v${NODE_VERSION}/bin/:${PATH}
+
+RUN useradd -ms /bin/bash frappe \
+    && apt-get update \
+    && apt-get install --no-install-recommends -y \
+    curl \
+    git \
+    vim \
+    nginx \
+    gettext-base \
+    file \
+    # weasyprint dependencies
+    libpango-1.0-0 \
+    libharfbuzz0b \
+    libpangoft2-1.0-0 \
+    libpangocairo-1.0-0 \
+    # For backups
+    restic \
+    gpg \
+    # MariaDB
+    mariadb-client \
+    less \
+    # Postgres
+    libpq-dev \
+    postgresql-client \
+    # For healthcheck
+    wait-for-it \
+    jq \
+    # For MIME type detection
+    media-types \
+    # For extracting bench.zip
+    unzip \
+    # NodeJS - Install NVM with checksum verification for security
+    && mkdir -p ${NVM_DIR} \
+    && NVM_INSTALL_SCRIPT=$(mktemp) \
+    && curl -sL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh -o "$NVM_INSTALL_SCRIPT" \
+    && NVM_CHECKSUM=$(sha256sum "$NVM_INSTALL_SCRIPT" | awk '{print $1}') \
+    && echo "NVM install script SHA256: $NVM_CHECKSUM" \
+    && EXPECTED_CHECKSUM="69da4f89f430cd5d6e591c2ccfa2e9e3ad55564ba60f651f00da85e04010c640" \
+    && if [ "$NVM_CHECKSUM" != "$EXPECTED_CHECKSUM" ]; then \
+         echo "WARNING: NVM install script checksum mismatch!" && \
+         echo "Expected: $EXPECTED_CHECKSUM" && \
+         echo "Got:      $NVM_CHECKSUM" && \
+         echo "Proceeding anyway - please verify and update checksum if NVM was updated"; \
+       fi \
+    && bash "$NVM_INSTALL_SCRIPT" \
+    && rm -f "$NVM_INSTALL_SCRIPT" \
+    && . ${NVM_DIR}/nvm.sh \
+    && nvm install ${NODE_VERSION} \
+    && nvm use v${NODE_VERSION} \
+    && npm install -g yarn \
+    && nvm alias default v${NODE_VERSION} \
+    && rm -rf ${NVM_DIR}/.cache \
+    && echo 'export NVM_DIR="/home/frappe/.nvm"' >>/home/frappe/.bashrc \
+    && echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm' >>/home/frappe/.bashrc \
+    && echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion' >>/home/frappe/.bashrc \
+    # Install wkhtmltopdf with patched qt
+    && if [ "$(uname -m)" = "aarch64" ]; then export ARCH=arm64; fi \
+    && if [ "$(uname -m)" = "x86_64" ]; then export ARCH=amd64; fi \
+    && downloaded_file=wkhtmltox_${WKHTMLTOPDF_VERSION}.${WKHTMLTOPDF_DISTRO}_${ARCH}.deb \
+    && curl -sLO https://github.com/wkhtmltopdf/packaging/releases/download/$WKHTMLTOPDF_VERSION/$downloaded_file \
+    && apt-get install -y ./$downloaded_file \
+    && rm $downloaded_file \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -fr /etc/nginx/sites-enabled/default \
+    && pip3 install frappe-bench \
+    # Fixes for non-root nginx and logs to stdout
+    && sed -i '/user www-data/d' /etc/nginx/nginx.conf \
+    && ln -sf /dev/stdout /var/log/nginx/access.log && ln -sf /dev/stderr /var/log/nginx/error.log \
+    && touch /run/nginx.pid \
+    && chown -R frappe:frappe /etc/nginx/conf.d \
+    && chown -R frappe:frappe /etc/nginx/nginx.conf \
+    && chown -R frappe:frappe /var/log/nginx \
+    && chown -R frappe:frappe /var/lib/nginx \
+    && chown -R frappe:frappe /run/nginx.pid \
+    && chmod 755 /usr/local/bin/nginx-entrypoint.sh \
+    && chmod 755 /usr/local/bin/backend-entrypoint.sh \
+    && chmod 644 /templates/nginx/frappe.conf.template
+
+# Install VS Code Server for dev containers
+RUN if [ "$(uname -m)" = "aarch64" ]; then export VSCODE_ARCH=arm64; fi \
+    && if [ "$(uname -m)" = "x86_64" ]; then export VSCODE_ARCH=x64; fi \
+    && mkdir -p /home/frappe/.vscode-server/bin/${VSCODE_SERVER_VERSION} \
+    && curl -sSL "https://update.code.visualstudio.com/commit:${VSCODE_SERVER_VERSION}/server-linux-${VSCODE_ARCH}/stable" \
+       -o /tmp/vscode-server.tar.gz \
+    && tar -xzf /tmp/vscode-server.tar.gz -C /home/frappe/.vscode-server/bin/${VSCODE_SERVER_VERSION} --strip-components=1 \
+    && rm /tmp/vscode-server.tar.gz \
+    && chown -R frappe:frappe /home/frappe/.vscode-server \
+    && echo "VS Code Server ${VSCODE_SERVER_VERSION} installed successfully"
+
+FROM base AS builder
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    # For frappe framework
+    wget \
+    #for building arm64 binaries
+    libcairo2-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libgif-dev \
+    librsvg2-dev \
+    # For psycopg2
+    libpq-dev \
+    # Other
+    libffi-dev \
+    liblcms2-dev \
+    libldap2-dev \
+    libmariadb-dev \
+    libsasl2-dev \
+    libtiff5-dev \
+    libwebp-dev \
+    pkg-config \
+    redis-tools \
+    rlwrap \
+    tk8.6-dev \
+    cron \
+    # For pandas
+    gcc \
+    build-essential \
+    libbz2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+USER frappe
+
+ARG FRAPPE_BRANCH=version-14
+ARG FRAPPE_PATH=https://github.com/frappe/frappe
+ARG CUSTOM_APPS=
+
+# Configure git for more stable and fault-resistant connections
+RUN git config --global http.postBuffer 1048576000 && \
+    git config --global http.lowSpeedLimit 0 && \
+    git config --global http.lowSpeedTime 999999 && \
+    git config --global core.compression 0 && \
+    git config --global http.version HTTP/1.1 && \
+    git config --global http.maxRequestBuffer 100M
+
+# Create frappe-bench directory and virtual environment
+RUN mkdir -p /home/frappe/frappe-bench && \
+    cd /home/frappe/frappe-bench && \
+    python3 -m venv env && \
+    . env/bin/activate && \
+    pip install --upgrade pip && \
+    pip install frappe-bench
+
+# Initialize bench with retries (bench init automatically clones frappe)
+RUN cd /home/frappe/frappe-bench && \
+    . env/bin/activate && \
+    for i in 1 2 3 4 5; do \
+      echo "=== Attempt $i of bench init ===" && \
+      bench init . \
+        --frappe-branch=${FRAPPE_BRANCH} \
+        --frappe-path=${FRAPPE_PATH} \
+        --no-procfile \
+        --no-backups \
+        --skip-redis-config-generation \
+        --ignore-exist \
+        --verbose && break || \
+      (echo "Failed attempt $i, cleaning up..." && rm -rf apps/frappe sites && sleep 10); \
+    done && \
+    if [ ! -d "apps/frappe" ]; then \
+      echo "ERROR: Could not initialize bench after 5 attempts" && exit 1; \
+    fi
+
+# Configure GitHub token securely using BuildKit secrets (token not stored in image layers)
+# Note: This requires DOCKER_BUILDKIT=1 and --secret id=github_token,src=<file>
+RUN --mount=type=secret,id=github_token,required=false \
+    if [ -f /run/secrets/github_token ]; then \
+      GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
+      git config --global credential.helper store && \
+      echo "https://${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
+      git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+    fi
+
+# Clone custom apps with retries
+# Format: CUSTOM_APPS="repo1:branch1,repo2:branch2" or "repo1:branch1" for single app
+RUN cd /home/frappe/frappe-bench && \
+    . env/bin/activate && \
+    if [ -n "${CUSTOM_APPS}" ]; then \
+      echo "${CUSTOM_APPS}" | tr ',' '\n' | while IFS=':' read -r repo branch; do \
+        if [ -n "$repo" ]; then \
+          echo "=== Installing app from $repo (branch: ${branch:-production}) ===" && \
+          # List apps before cloning
+          ls -1 apps/ 2>/dev/null | sort > /tmp/apps_before.txt || touch /tmp/apps_before.txt && \
+          # Clone with retries
+          clone_success=false && \
+          for i in 1 2 3 4 5; do \
+            echo "--- Attempt $i of cloning $repo ---" && \
+            if bench get-app --branch="${branch:-production}" "https://github.com/$repo"; then \
+              clone_success=true && \
+              break; \
+            else \
+              echo "Failed attempt $i, waiting 5s..." && sleep 5; \
+            fi; \
+          done && \
+          # Detect the actual app name by comparing directory listings
+          if [ "$clone_success" = "true" ]; then \
+            ls -1 apps/ 2>/dev/null | sort > /tmp/apps_after.txt && \
+            app_name=$(comm -13 /tmp/apps_before.txt /tmp/apps_after.txt | head -n 1) && \
+            rm -f /tmp/apps_before.txt /tmp/apps_after.txt && \
+            if [ -n "$app_name" ] && [ -d "apps/$app_name" ]; then \
+              echo "✓ Successfully installed app: $app_name"; \
+            else \
+              echo "ERROR: Could not detect installed app from $repo" && exit 1; \
+            fi; \
+          else \
+            rm -f /tmp/apps_before.txt /tmp/apps_after.txt && \
+            echo "ERROR: Could not clone app from $repo after 5 attempts" && exit 1; \
+          fi; \
+        fi; \
+      done; \
+    else \
+      echo "No custom apps to install (CUSTOM_APPS is empty)"; \
+    fi
+
+# Create common_site_config.json and save custom apps list
+RUN cd /home/frappe/frappe-bench && \
+    echo "{}" > sites/common_site_config.json && \
+    if [ -n "${CUSTOM_APPS}" ]; then \
+      echo "${CUSTOM_APPS}" > /home/frappe/frappe-bench/.custom_apps_list; \
+    fi
+
+# SECURITY: Clean up any git credentials that might have been created during build
+# This ensures no secrets persist in the final image
+RUN rm -f ~/.git-credentials 2>/dev/null || true && \
+    git config --global --unset credential.helper 2>/dev/null || true && \
+    git config --global --unset-all url.https://*.insteadOf 2>/dev/null || true && \
+    rm -f ~/.gitconfig 2>/dev/null || true
+
+FROM base AS backend
+
+USER frappe
+
+COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
+
+# Copy bench_files contents if exists (will be applied at runtime via entrypoint)
+COPY --chown=frappe:frappe bench_files/ /bench_files/
+
+WORKDIR /home/frappe/frappe-bench
+
+VOLUME [ \
+  "/home/frappe/frappe-bench/sites", \
+  "/home/frappe/frappe-bench/sites/assets", \
+  "/home/frappe/frappe-bench/logs" \
+]
+
+ENTRYPOINT ["/usr/local/bin/backend-entrypoint.sh"]

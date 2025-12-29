@@ -1,0 +1,38 @@
+{
+	"name": "Frappe Development",
+	"dockerComposeFile": "../compose.yaml",
+	"service": "backend",
+	"workspaceFolder": "/home/frappe/frappe-bench",
+	
+	"remoteUser": "frappe",
+	
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-python.debugpy",
+				"dbaeumer.vscode-eslint",
+				"esbenp.prettier-vscode",
+				"eamodio.gitlens"
+			],
+			"settings": {
+				"terminal.integrated.defaultProfile.linux": "bash",
+				"python.defaultInterpreterPath": "/home/frappe/frappe-bench/env/bin/python",
+				"python.analysis.extraPaths": [
+					"/home/frappe/frappe-bench/apps/frappe",
+					"/home/frappe/frappe-bench/apps"
+				],
+				"editor.formatOnSave": true,
+				"files.watcherExclude": {
+					"**/node_modules/**": true,
+					"**/.git/objects/**": true
+				}
+			}
+		}
+	},
+	
+	"forwardPorts": [8000, 8001, 9000, 3306, 6379],
+	
+	"postAttachCommand": "cd /home/frappe/frappe-bench && bench --version"
+}

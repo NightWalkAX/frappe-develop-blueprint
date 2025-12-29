@@ -1,0 +1,192 @@
+x-customizable-image: &customizable_image
+  # By default the image used contains the `frappe` framework and custom apps.
+  # See https://github.com/frappe/frappe_docker/blob/main/docs/container-setup/02-build-setup.md#define-custom-apps
+  # about using custom images.
+  image: ${CUSTOM_IMAGE:-frappe-custom}:${CUSTOM_TAG:-latest}
+  pull_policy: ${PULL_POLICY:-never}
+  restart: ${RESTART_POLICY:-unless-stopped}
+
+x-depends-on-configurator: &depends_on_configurator
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+
+x-backend-defaults: &backend_defaults
+  <<: [*depends_on_configurator, *customizable_image]
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+
+services:
+  configurator:
+    <<: *backend_defaults
+    platform: linux/amd64
+    networks:
+      - frappe-network
+    entrypoint:
+      - bash
+      - -c
+    # add redis_socketio for backward compatibility
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+    environment:
+      DB_HOST: ${DB_HOST:-mariadb}
+      DB_PORT: ${DB_PORT:-3306}
+      REDIS_CACHE: ${REDIS_CACHE:-redis-cache:6379}
+      REDIS_QUEUE: ${REDIS_QUEUE:-redis-queue:6379}
+      SOCKETIO_PORT: 9000
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+    restart: on-failure
+
+  backend:
+    <<: *backend_defaults
+    platform: linux/amd64
+    networks:
+      - frappe-network
+    environment:
+      DB_HOST: ${DB_HOST:-mariadb}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_ROOT_USER: root
+      DB_ROOT_PASSWORD: ${DB_PASSWORD:-frappe_password}
+      SITE_NAME: ${SITE_NAME:-example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      REDIS_CACHE: ${REDIS_CACHE:-redis-cache:6379}
+      FRAPPE_PORT: 8000
+
+  frontend:
+    <<: *customizable_image
+    platform: linux/amd64
+    networks:
+      - frappe-network
+    entrypoint: []
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-agency.erp}
+      UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
+      UPSTREAM_REAL_IP_HEADER: ${UPSTREAM_REAL_IP_HEADER:-X-Forwarded-For}
+      UPSTREAM_REAL_IP_RECURSIVE: ${UPSTREAM_REAL_IP_RECURSIVE:-off}
+      PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120}
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
+    ports:
+      - "127.0.0.1:${FRAPPE_PORT:-8000}:8080"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      - backend
+      - websocket
+
+  websocket:
+    <<: [*depends_on_configurator, *customizable_image]
+    platform: linux/amd64
+    networks:
+      - frappe-network
+    entrypoint: []
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+
+  queue-short:
+    <<: *backend_defaults
+    platform: linux/amd64
+    networks:
+      - frappe-network
+    entrypoint: []
+    command: bench worker --queue short,default
+
+  queue-long:
+    <<: *backend_defaults
+    platform: linux/amd64
+    networks:
+      - frappe-network
+    entrypoint: []
+    command: bench worker --queue long,default,short
+
+  scheduler:
+    <<: *backend_defaults
+    platform: linux/amd64
+    networks:
+      - frappe-network
+    entrypoint: []
+    command: bench schedule
+
+  mariadb:
+    # Pinned to specific version for security - update manually after testing
+    image: mariadb:10.6.20
+    restart: ${RESTART_POLICY:-unless-stopped}
+    networks:
+      - frappe-network
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed # Temporary fix for MariaDB 10.6
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-frappe_password}
+      MYSQL_DATABASE: ${DB_NAME:-frappe_db}
+      MYSQL_USER: ${DB_USER:-frappe}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-frappe_password}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./resources/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: mysqladmin ping -h localhost --password=${DB_PASSWORD:-frappe_password}
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-cache:
+    # Pinned to specific version for security - update manually after testing
+    image: redis:7.4.1-alpine
+    restart: ${RESTART_POLICY:-unless-stopped}
+    networks:
+      - frappe-network
+    command: redis-server --save 60 1 --loglevel warning --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis-cache-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-queue:
+    # Pinned to specific version for security - update manually after testing
+    image: redis:7.4.1-alpine
+    restart: ${RESTART_POLICY:-unless-stopped}
+    networks:
+      - frappe-network
+    command: redis-server --save 60 1 --loglevel warning --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis-queue-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sites:
+  mariadb-data:
+  redis-cache-data:
+  redis-queue-data:
+
+networks:
+  frappe-network:
+    driver: bridge
