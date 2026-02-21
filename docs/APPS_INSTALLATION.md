@@ -60,8 +60,10 @@ When the container starts:
 # Custom apps to install
 CUSTOM_APPS=mycompany/custom_erp:main,mycompany/reports_app:develop,mycompany/integrations:version-14
 
-# GitHub token for private repos (optional)
-GITHUB_TOKEN=ghp_your_token_here
+# SSH Private Key for accessing private GitHub repositories (base64 encoded)
+# Generate with: cat ~/.ssh/id_rsa | base64 -w 0
+# Leave empty if only using public repositories
+SSH_PRIVATE_KEY=
 
 # Frappe configuration
 FRAPPE_BRANCH=version-14
@@ -89,8 +91,40 @@ docker compose up
 1. **Order matters**: Apps are installed in the order they appear in `CUSTOM_APPS`
 2. **Dependencies**: If app B depends on app A, list app A first
 3. **Branch defaults**: If no branch is specified, `develop` is used
-4. **GitHub Token**: Set `GITHUB_TOKEN` for private repositories
+4. **SSH Authentication**: Use `SSH_PRIVATE_KEY` (base64 encoded) for private repositories
 5. **App names**: The app name is derived from the repository name (e.g., `myorg/my-app` → `my-app`)
+
+## SSH Key Setup for Private Repositories
+
+To access private GitHub repositories, you need to configure an SSH key:
+
+### 1. Generate SSH Key (if you don't have one)
+
+```bash
+ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+```
+
+### 2. Add SSH Key to GitHub
+
+Copy your public key:
+```bash
+cat ~/.ssh/id_rsa.pub
+```
+
+Add it to GitHub: Settings → SSH and GPG keys → New SSH key
+
+### 3. Encode Private Key for Docker Build
+
+```bash
+cat ~/.ssh/id_rsa | base64 -w 0
+```
+
+Copy the output and add it to your `.env` file:
+```bash
+SSH_PRIVATE_KEY=LS0tLS1CRUdJTi...rest_of_base64_string
+```
+
+**Security Note**: Never commit the `.env` file with your private key to version control. The `.env` file should be in `.gitignore`.
 
 ## Troubleshooting
 
@@ -115,10 +149,13 @@ Look for messages like:
 
 ### Private repositories
 
-Ensure your `GITHUB_TOKEN` has access to the private repositories:
+Ensure your SSH key is properly configured and has access to the private repositories. You can test SSH access with:
+
 ```bash
-GITHUB_TOKEN=ghp_your_personal_access_token
+ssh -T git@github.com
 ```
+
+You should see a message like: "Hi username! You've successfully authenticated..."
 
 ## Migration from Old Configuration
 

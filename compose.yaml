@@ -58,8 +58,11 @@ services:
     environment:
       DB_HOST: ${DB_HOST:-mariadb}
       DB_PORT: ${DB_PORT:-3306}
-      DB_ROOT_USER: root
-      DB_ROOT_PASSWORD: ${DB_PASSWORD:-frappe_password}
+      DB_ROOT_USER: ${DB_ROOT_USER:-admin}
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-admin}
+      DB_NAME: ${DB_NAME:-frappe_db}
+      DB_USER: ${DB_USER:-frappe}
+      DB_PASSWORD: ${DB_PASSWORD:-frappe}
       SITE_NAME: ${SITE_NAME:-example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       REDIS_CACHE: ${REDIS_CACHE:-redis-cache:6379}
@@ -82,13 +85,46 @@ services:
       UPSTREAM_REAL_IP_RECURSIVE: ${UPSTREAM_REAL_IP_RECURSIVE:-off}
       PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120}
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
-    ports:
-      - "127.0.0.1:${FRAPPE_PORT:-8000}:8080"
+    #ports:  # Desactivar para que traefik maneje los puertos del host
+    #  - "0.0.0.0:80:8080"
+    #  - "0.0.0.0:443:8080"
     volumes:
       - sites:/home/frappe/frappe-bench/sites
     depends_on:
       - backend
       - websocket
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend-http.rule=Host(`cronoxinvesting.com`)"
+      - "traefik.http.routers.frontend-http.entrypoints=web"
+      - "traefik.http.routers.frontend-http.middlewares=https-redirect"
+      - "traefik.http.routers.frontend-https.rule=Host(`cronoxinvesting.com`)"
+      - "traefik.http.routers.frontend-https.entrypoints=websecure"
+      - "traefik.http.routers.frontend-https.tls=true"
+      - "traefik.http.routers.frontend-https.tls.certresolver=myresolver"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=admin@cronox.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - frappe-network
+    restart: unless-stopped
 
   websocket:
     <<: [*depends_on_configurator, *customizable_image]
@@ -135,9 +171,9 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --skip-character-set-client-handshake
-      - --skip-innodb-read-only-compressed # Temporary fix for MariaDB 10.6
+      - --skip-innodb-read-only-compressed
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-frappe_password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-admin}
       MYSQL_DATABASE: ${DB_NAME:-frappe_db}
       MYSQL_USER: ${DB_USER:-frappe}
       MYSQL_PASSWORD: ${DB_PASSWORD:-frappe_password}
@@ -145,7 +181,7 @@ services:
       - mariadb-data:/var/lib/mysql
       - ./resources/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: mysqladmin ping -h localhost --password=${DB_PASSWORD:-frappe_password}
+      test: mysqladmin ping -h localhost --password=${DB_ROOT_PASSWORD:-admin}
       interval: 10s
       timeout: 5s
       retries: 5

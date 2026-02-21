@@ -96,6 +96,8 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
     # For frappe framework
     wget \
+    # For SSH cloning
+    openssh-client \
     #for building arm64 binaries
     libcairo2-dev \
     libpango1.0-dev \
@@ -127,7 +129,7 @@ USER frappe
 
 ARG FRAPPE_BRANCH=version-14
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
-ARG GITHUB_TOKEN=
+ARG SSH_PRIVATE_KEY=
 ARG CUSTOM_APPS=
 
 # Configure git for more stable and fault-resistant connections
@@ -165,28 +167,37 @@ RUN cd /home/frappe/frappe-bench && \
       echo "ERROR: Could not initialize bench after 5 attempts" && exit 1; \
     fi
 
-# Configure GitHub token if available
-RUN if [ -n "${GITHUB_TOKEN}" ]; then \
-      git config --global credential.helper store && \
-      echo "https://${GITHUB_TOKEN}@github.com" > ~/.git-credentials && \
-      git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+# Configure SSH for GitHub if private key is provided
+RUN mkdir -p ~/.ssh && chmod 700 ~/.ssh
+RUN if [ -n "${SSH_PRIVATE_KEY}" ]; then \
+      echo "${SSH_PRIVATE_KEY}" | base64 -d > ~/.ssh/id_rsa && \
+      chmod 600 ~/.ssh/id_rsa && \
+      ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts && \
+      git config --global url."git@github.com:".insteadOf "https://github.com/"; \
     fi
 
 # Clone custom apps with retries
 # Format: CUSTOM_APPS="repo1:branch1,repo2:branch2" or "repo1:branch1" for single app
+# Uses SSH for authentication if SSH_PRIVATE_KEY is provided, otherwise uses HTTPS
 RUN cd /home/frappe/frappe-bench && \
     . env/bin/activate && \
     if [ -n "${CUSTOM_APPS}" ]; then \
       echo "${CUSTOM_APPS}" | tr ',' '\n' | while IFS=':' read -r repo branch; do \
         if [ -n "$repo" ]; then \
           echo "=== Installing app from $repo (branch: ${branch:-develop}) ===" && \
+          # Determine URL based on SSH key availability
+          if [ -n "${SSH_PRIVATE_KEY}" ]; then \
+            REPO_URL="git@github.com:$repo.git"; \
+          else \
+            REPO_URL="https://github.com/$repo"; \
+          fi && \
           # List apps before cloning
           ls -1 apps/ 2>/dev/null | sort > /tmp/apps_before.txt || touch /tmp/apps_before.txt && \
           # Clone with retries
           clone_success=false && \
           for i in 1 2 3 4 5; do \
             echo "--- Attempt $i of cloning $repo ---" && \
-            if bench get-app --branch="${branch:-develop}" "https://github.com/$repo"; then \
+            if bench get-app --branch="${branch:-develop}" "$REPO_URL"; then \
               clone_success=true && \
               break; \
             else \

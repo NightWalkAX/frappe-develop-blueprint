@@ -8,9 +8,11 @@ SITE_NAME="${SITE_NAME:-erp.local}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 DB_HOST="${DB_HOST:-mariadb}"
 DB_PORT="${DB_PORT:-3306}"
-DB_ROOT_USER="${DB_ROOT_USER:-root}"
+DB_ROOT_USER="${DB_ROOT_USER:-admin}"
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-frappe_password}"
 DB_NAME="${DB_NAME:-frappe_db}"
+DB_USER="${DB_USER:-frappe}"
+DB_PASSWORD="${DB_PASSWORD:-frappe_password}"
 REDIS_CACHE="${REDIS_CACHE:-redis-cache:6379}"
 
 echo "🚀 Starting site configuration..."
@@ -27,12 +29,22 @@ else
 fi
 
 # Wait for database to be ready
-echo "⏳ Waiting for MariaDB to be available..."
-until mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_ROOT_USER}" -p"${DB_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; do
-    echo "MariaDB is not ready - waiting..."
+echo "⏳ Waiting for MySQL to be available at ${DB_HOST}:${DB_PORT}..."
+max_db_attempts=60
+db_attempt=0
+while [ $db_attempt -lt $max_db_attempts ]; do
+    if mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_ROOT_USER}" -p"${DB_ROOT_PASSWORD}" -e "SELECT 1" >/dev/null 2>&1; then
+        echo "✅ MySQL is ready"
+        break
+    fi
+    db_attempt=$((db_attempt + 1))
+    echo "MySQL is not ready - waiting... ($db_attempt/$max_db_attempts)"
     sleep 2
 done
-echo "✅ MariaDB is ready"
+if [ $db_attempt -eq $max_db_attempts ]; then
+    echo "❌ MySQL connection timeout after $max_db_attempts attempts"
+    exit 1
+fi
 
 # Wait for Redis to be ready
 echo "⏳ Waiting for Redis to be available..."
@@ -59,9 +71,11 @@ if [ ! -d "sites/${SITE_NAME}" ]; then
         --admin-password "${ADMIN_PASSWORD}" \
         --db-host "${DB_HOST}" \
         --db-port "${DB_PORT}" \
-        --db-root-username "${DB_ROOT_USER}" \
-        --db-root-password "${DB_ROOT_PASSWORD}" \
-        --no-mariadb-socket \
+        --db-name "${DB_NAME}" \
+        --db-password "${DB_PASSWORD}" \
+        --mariadb-root-username "${DB_ROOT_USER}" \
+        --mariadb-root-password "${DB_ROOT_PASSWORD}" \
+        --mariadb-user-host-login-scope '%' \
         --force
     
     echo "✅ Site created successfully"

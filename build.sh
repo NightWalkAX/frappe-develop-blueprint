@@ -54,6 +54,162 @@ find_available_port() {
     return 1
 }
 
+# Function to check and setup SSH keys for GitHub
+check_and_setup_ssh() {
+    local ssh_key_path=""
+    local ssh_pub_key=""
+    
+    echo -e "${GREEN}Verificando configuración de SSH para GitHub...${NC}"
+    
+    # Check if SSH_PRIVATE_KEY is set in environment
+    if [ -n "$SSH_PRIVATE_KEY" ]; then
+        if [ -f "$SSH_PRIVATE_KEY" ]; then
+            echo -e "${GREEN}✓ SSH_PRIVATE_KEY encontrada: $SSH_PRIVATE_KEY${NC}"
+            ssh_key_path="$SSH_PRIVATE_KEY"
+        else
+            echo -e "${YELLOW}⚠️  SSH_PRIVATE_KEY definida pero el archivo no existe: $SSH_PRIVATE_KEY${NC}"
+        fi
+    fi
+    
+    # If no valid key found, check default locations
+    if [ -z "$ssh_key_path" ]; then
+        for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa ~/.ssh/id_ecdsa; do
+            if [ -f "$key" ]; then
+                ssh_key_path="$key"
+                echo -e "${GREEN}✓ Clave SSH encontrada: $ssh_key_path${NC}"
+                break
+            fi
+        done
+    fi
+    
+    # If still no key, offer to generate one
+    if [ -z "$ssh_key_path" ]; then
+        echo -e "${YELLOW}⚠️  No se encontró ninguna clave SSH configurada${NC}"
+        echo -e "${YELLOW}Para clonar repositorios privados necesitas una clave SSH${NC}"
+        echo ""
+        read -p "¿Deseas generar una nueva clave SSH ahora? (s/n): " -n 1 -r
+        echo
+        
+        if [[ $REPLY =~ ^[Ss]$ ]]; then
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            
+            echo -e "${GREEN}Generando nueva clave SSH Ed25519...${NC}"
+            read -p "Ingresa tu email de GitHub: " github_email
+            
+            ssh-keygen -t ed25519 -C "$github_email" -f ~/.ssh/id_ed25519 -N ""
+            
+            if [ $? -eq 0 ]; then
+                ssh_key_path="$HOME/.ssh/id_ed25519"
+                echo -e "${GREEN}✓ Clave SSH generada exitosamente${NC}"
+                
+                # Start ssh-agent and add key
+                eval "$(ssh-agent -s)" > /dev/null 2>&1
+                ssh-add "$ssh_key_path" 2>/dev/null
+            else
+                echo -e "${RED}✗ Error al generar la clave SSH${NC}"
+                return 1
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Continuando sin clave SSH - puede fallar con repositorios privados${NC}"
+            return 0
+        fi
+    fi
+    
+    # Get public key
+    if [ -f "${ssh_key_path}.pub" ]; then
+        ssh_pub_key=$(cat "${ssh_key_path}.pub")
+    fi
+    
+    # Test GitHub SSH connection
+    echo -e "${GREEN}Probando conexión SSH a GitHub...${NC}"
+    ssh -T git@github.com -o StrictHostKeyChecking=no 2>&1 | grep -q "successfully authenticated"
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Conexión SSH a GitHub exitosa${NC}"
+    else
+        echo -e "${YELLOW}⚠️  No se pudo autenticar con GitHub${NC}"
+        echo ""
+        echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${GREEN}📋 PASOS PARA AGREGAR LA CLAVE SSH A GITHUB:${NC}"
+        echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo -e "${YELLOW}IMPORTANTE: Debes copiar la CLAVE PÚBLICA completa (no el fingerprint)${NC}"
+        echo ""
+        echo -e "${YELLOW}1. COPIA esta clave pública SSH completa:${NC}"
+        echo ""
+        if [ -n "$ssh_pub_key" ]; then
+            echo -e "${GREEN}───────────────────────────────────────────────────────────${NC}"
+            echo -e "${GREEN}$ssh_pub_key${NC}"
+            echo -e "${GREEN}───────────────────────────────────────────────────────────${NC}"
+            echo ""
+            echo -e "${YELLOW}   💡 Cópiala completa desde 'ssh-ed25519' hasta el email${NC}"
+            echo -e "${YELLOW}   También puedes copiarla con:${NC}"
+            echo "   cat ${ssh_key_path}.pub | xclip -selection clipboard  # (si tienes xclip)"
+            echo "   cat ${ssh_key_path}.pub"
+        else
+            echo "   cat ${ssh_key_path}.pub"
+        fi
+        echo ""
+        echo -e "${YELLOW}2. Abre GitHub en tu navegador:${NC}"
+        echo "   ${GREEN}https://github.com/settings/ssh/new${NC}"
+        echo ""
+        echo -e "${YELLOW}3. En GitHub verás dos campos:${NC}"
+        echo "   ${GREEN}Title:${NC} Dale un nombre descriptivo"
+        echo "          Ejemplo: Frappe Development - $(hostname)"
+        echo ""
+        echo "   ${GREEN}Key:${NC}   PEGA aquí la clave pública COMPLETA"
+        echo "          (la línea completa que empieza con 'ssh-ed25519' o 'ssh-rsa')"
+        echo ""
+        echo -e "${YELLOW}4. Haz clic en 'Add SSH key'${NC}"
+        echo ""
+        echo -e "${YELLOW}5. GitHub te pedirá tu contraseña para confirmar${NC}"
+        echo ""
+        echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
+        
+        read -p "Presiona ENTER cuando hayas agregado la clave a GitHub..."
+        
+        # Test again
+        echo -e "${GREEN}Probando conexión nuevamente...${NC}"
+        ssh -T git@github.com -o StrictHostKeyChecking=no 2>&1 | grep -q "successfully authenticated"
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ ¡Conexión SSH a GitHub exitosa!${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Aún no se puede conectar. Verifica que la clave esté agregada correctamente.${NC}"
+            read -p "¿Deseas continuar de todos modos? (s/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+                exit 1
+            fi
+        fi
+    fi
+    
+    # Update .env file with SSH key path if not already set
+    if [ -n "$ssh_key_path" ] && [ -f .env ]; then
+        if ! grep -q "^SSH_PRIVATE_KEY=" .env 2>/dev/null; then
+            echo "" >> .env
+            echo "# SSH Private Key path for private repositories" >> .env
+            echo "SSH_PRIVATE_KEY=$ssh_key_path" >> .env
+            echo -e "${GREEN}✓ SSH_PRIVATE_KEY agregada a .env: $ssh_key_path${NC}"
+        elif ! grep -q "^SSH_PRIVATE_KEY=$ssh_key_path" .env 2>/dev/null; then
+            sed -i "s|^SSH_PRIVATE_KEY=.*|SSH_PRIVATE_KEY=$ssh_key_path|" .env
+            echo -e "${GREEN}✓ SSH_PRIVATE_KEY actualizada en .env: $ssh_key_path${NC}"
+        fi
+    fi
+    
+    # Export for docker build
+    export SSH_PRIVATE_KEY="$ssh_key_path"
+    
+    # Read the actual key content and encode it in base64 for docker build
+    if [ -f "$ssh_key_path" ]; then
+        export SSH_PRIVATE_KEY_CONTENT=$(cat "$ssh_key_path" | base64 -w 0)
+    fi
+    
+    return 0
+}
+
 # Verify that .env file exists
 if [ ! -f .env ]; then
     echo -e "${RED}Error: .env file not found${NC}"
@@ -64,6 +220,9 @@ fi
 # Load variables from .env
 echo -e "${GREEN}Loading variables from .env...${NC}"
 export $(grep -v '^#' .env | xargs)
+
+# Check and setup SSH keys
+check_and_setup_ssh
 
 # Verify required variables
 if [ -z "$CUSTOM_APPS" ]; then
@@ -91,29 +250,43 @@ export FRAPPE_PORT
 
 echo -e "${GREEN}✓ Puerto disponible encontrado: $FRAPPE_PORT${NC}"
 
+echo ""
 echo -e "${GREEN}Configuration:${NC}"
 echo "  CUSTOM_APPS: $CUSTOM_APPS"
 echo "  FRAPPE_BRANCH: $FRAPPE_BRANCH"
 echo "  PYTHON_VERSION: $PYTHON_VERSION"
 echo "  IMAGE: ${CUSTOM_IMAGE}:${CUSTOM_TAG}"
 echo "  FRAPPE_PORT: $FRAPPE_PORT (auto-detected)"
-if [ -n "$GITHUB_TOKEN" ]; then
-    echo "  GITHUB_TOKEN: ******* (configured)"
+if [ -n "$SSH_PRIVATE_KEY" ]; then
+    echo "  SSH_PRIVATE_KEY: $SSH_PRIVATE_KEY (configured)"
 else
-    echo "  GITHUB_TOKEN: (not configured - may fail on private repositories)"
+    echo "  SSH_PRIVATE_KEY: (not configured)"
 fi
+echo ""
 
 # Build the image
 echo -e "${GREEN}Starting image build...${NC}"
 
-docker build \
-    --build-arg GITHUB_TOKEN="$GITHUB_TOKEN" \
-    --build-arg CUSTOM_APPS="$CUSTOM_APPS" \
-    --build-arg FRAPPE_BRANCH="$FRAPPE_BRANCH" \
-    --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
-    -t ${CUSTOM_IMAGE}:${CUSTOM_TAG} \
-    -f images/develop/Containerfile \
-    .
+# Use key content if available, otherwise use path
+if [ -n "$SSH_PRIVATE_KEY_CONTENT" ]; then
+    docker build \
+        --build-arg SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY_CONTENT" \
+        --build-arg CUSTOM_APPS="$CUSTOM_APPS" \
+        --build-arg FRAPPE_BRANCH="$FRAPPE_BRANCH" \
+        --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
+        -t ${CUSTOM_IMAGE}:${CUSTOM_TAG} \
+        -f images/develop/Containerfile \
+        .
+else
+    docker build \
+        --build-arg SSH_PRIVATE_KEY="$SSH_PRIVATE_KEY" \
+        --build-arg CUSTOM_APPS="$CUSTOM_APPS" \
+        --build-arg FRAPPE_BRANCH="$FRAPPE_BRANCH" \
+        --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
+        -t ${CUSTOM_IMAGE}:${CUSTOM_TAG} \
+        -f images/develop/Containerfile \
+        .
+fi
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Image built successfully: ${CUSTOM_IMAGE}:${CUSTOM_TAG}${NC}"
